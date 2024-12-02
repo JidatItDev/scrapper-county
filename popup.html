@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MyOrangeCerk Scraper</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-gray-100 p-6">
+    <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-6">
+      <h1 class="text-2xl font-bold mb-4 text-gray-800">
+        MyOrangeCerk Scraper
+      </h1>
+      <button
+        id="extractCaseDetailsBtn"
+        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300 ease-in-out"
+      >
+        Extract Case Details
+      </button>
+      <div id="loader" class="hidden mt-4">
+        <div
+          class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4"
+        ></div>
+        <p class="text-gray-600">Extracting data...</p>
+      </div>
+      <div
+        id="extractedData"
+        class="mt-6 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-4"
+      ></div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
