@@ -79,6 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <tr>
             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Case Number</th>
             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UCN</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PDF URL</th>
           </tr>
         </thead>
         <tbody class="bg-white divide-y divide-gray-200">
@@ -86,8 +87,19 @@ document.addEventListener("DOMContentLoaded", () => {
             .map(
               (caseDetail) => `
             <tr>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${caseDetail.caseNumber}</td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${caseDetail.ucn}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${
+                caseDetail.caseNumber
+              }</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${
+                caseDetail.ucn
+              }</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                ${
+                  caseDetail.pdfUrl !== "PDF URL Not Found"
+                    ? `<a href="${caseDetail.pdfUrl}" target="_blank" class="text-blue-600 hover:underline">View PDF</a>`
+                    : caseDetail.pdfUrl
+                }
+              </td>
             </tr>
           `
             )

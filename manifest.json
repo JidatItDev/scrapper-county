@@ -3,18 +3,33 @@
   "name": "MyOrangeCerk Scraper",
   "version": "1.0.0",
   "description": "Scraper for MyOrangeCerk case search",
-  "permissions": ["activeTab", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+
   "host_permissions": ["https://myeclerk.myorangeclerk.com/*"],
-  "action": {
-    "default_popup": "popup.html"
-  },
   "content_scripts": [
     {
       "matches": ["https://myeclerk.myorangeclerk.com/Cases/Search*"],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "run_at": "document_end"
     }
   ],
+  "action": {
+    "default_popup": "popup.html"
+  },
   "background": {
     "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "tesseract.min.js",
+        "tesseract.esm.min.js",
+        "worker.min.js"
+      ],
+      "matches": ["https://myeclerk.myorangeclerk.com/*"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' ; object-src 'self'"
   }
 }

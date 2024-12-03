@@ -1,10 +1,68 @@
-(function () {
+(() => {
   console.log("Detailed Content Script Loaded");
 
-  // Function to fetch UCN from a single case details page
-  async function fetchUCNFromCasePage(href) {
+  // Function to dynamically load Tesseract.js
+  // async function loadTesseractJS() {
+  //   const scriptURL = chrome.runtime.getURL("tesseract.min.js");
+  //   console.log("Tesseract Script URL:", scriptURL);
+
+  //   return new Promise((resolve, reject) => {
+  //     const script = document.createElement("script");
+  //     script.src = scriptURL;
+
+  //     script.onload = () => {
+  //       if (typeof Tesseract === "undefined") {
+  //         console.error("Tesseract.js did not load correctly.");
+  //         reject(new Error("Tesseract.js did not load correctly."));
+  //       } else {
+  //         console.log("Tesseract.js loaded successfully.");
+  //         resolve();
+  //       }
+  //     };
+
+  //     script.onerror = (event) => {
+  //       console.error("Failed to load Tesseract.js:", event);
+  //       reject(new Error("Failed to load Tesseract.js"));
+  //     };
+
+  //     document.head.appendChild(script);
+  //   });
+  // }
+
+  // Function to perform OCR on a PDF image URL
+  async function performOCR(imageUrl) {
+    try {
+      const { createWorker } = Tesseract;
+      const worker = createWorker({
+        workerPath: chrome.runtime.getURL("worker.min.js"),
+        corePath: chrome.runtime.getURL("tesseract.esm.min.js"),
+      });
+
+      console.log("Initializing Tesseract worker...");
+      await worker.load();
+      await worker.loadLanguage("eng");
+      await worker.initialize("eng");
+
+      console.log("Processing OCR...");
+      const {
+        data: { text },
+      } = await worker.recognize(imageUrl);
+
+      console.log("Extracted text from OCR:", text);
+
+      // Terminate the worker after OCR
+      await worker.terminate();
+
+      return text;
+    } catch (error) {
+      console.error("OCR Error:", error);
+      return "OCR Failed: " + error.message;
+    }
+  }
+
+  // Function to fetch UCN and PDF URL from a single case details page
+  async function fetchUCNAndPDFFromCasePage(href) {
     return new Promise((resolve, reject) => {
-      // Create a temporary iframe to load the page
       const iframe = document.createElement("iframe");
       iframe.style.display = "none";
       iframe.src = href;
@@ -12,33 +70,61 @@
 
       iframe.onload = () => {
         try {
-          const ucnElement = iframe.contentDocument.getElementById("caseUCN");
+          const iframeDoc =
+            iframe.contentDocument || iframe.contentWindow.document;
+          const ucnElement = iframeDoc.getElementById("caseUCN");
 
-          if (ucnElement) {
-            const ucn = ucnElement.textContent.trim();
-            resolve(ucn);
-          } else {
-            resolve(null);
+          const rows = iframeDoc.querySelectorAll("table tbody tr");
+          let pdfUrl = null;
+
+          for (const row of rows) {
+            const targetCell = Array.from(row.querySelectorAll("td")).find(
+              (cell) =>
+                Array.from(cell.querySelectorAll("p, a")).some((element) =>
+                  element.textContent.trim().includes("Final Judgment")
+                )
+            );
+
+            if (targetCell) {
+              const documentLink = targetCell.querySelector(
+                'a[href*="/DocView/Doc"]'
+              );
+
+              if (documentLink) {
+                pdfUrl = documentLink.href;
+                break;
+              }
+            }
           }
+
+          const ucn = ucnElement ? ucnElement.textContent.trim() : null;
+          resolve({
+            ucn: ucn || "UCN Not Found",
+            pdfUrl: pdfUrl || "PDF URL Not Found",
+          });
         } catch (error) {
-          console.error("Error extracting UCN:", error);
-          resolve(null);
+          console.error("Error extracting UCN and PDF URL:", error);
+          resolve({
+            ucn: "UCN Not Found",
+            pdfUrl: "PDF URL Not Found",
+          });
         } finally {
-          // Remove iframe
           document.body.removeChild(iframe);
         }
       };
 
-      // Handle potential loading errors
       iframe.onerror = () => {
         console.error("Failed to load iframe");
-        resolve(null);
+        resolve({
+          ucn: "UCN Not Found",
+          pdfUrl: "PDF URL Not Found",
+        });
         document.body.removeChild(iframe);
       };
     });
   }
 
-  // Main function to extract case details with UCN
+  // Main function to extract case details with OCR
   async function extractDetailedCaseInformation() {
     const rows = document.querySelectorAll("table tbody tr");
     console.log(`Found ${rows.length} rows to process`);
@@ -52,22 +138,25 @@
       if (caseLinkElement && statusCell) {
         const statusText = statusCell.textContent.trim();
 
-        // Only process rows where the status is "Closed" or "Reclosed"
-        if (statusText === "Closed" || statusText === "Reclosed") {
+        if (["Closed", "Reclosed"].includes(statusText)) {
           const caseNumber = caseLinkElement.textContent.trim();
           const href = caseLinkElement.href;
 
           try {
-            const ucn = await fetchUCNFromCasePage(href);
+            const { ucn, pdfUrl } = await fetchUCNAndPDFFromCasePage(href);
+
+            let ocrText = "No OCR Text Found";
+            if (pdfUrl !== "PDF URL Not Found") {
+              ocrText = await performOCR(pdfUrl);
+            }
 
             detailedCases.push({
-              caseNumber: caseNumber,
-              href: href,
-              ucn: ucn || "UCN Not Found",
+              caseNumber,
+              href,
+              ucn,
+              pdfUrl,
+              ocrText,
             });
-
-            // // Add a delay to prevent overwhelming the server
-            // await new Promise((resolve) => setTimeout(resolve, 10));
           } catch (error) {
             console.error(`Error processing case ${caseNumber}:`, error);
           }
@@ -78,28 +167,19 @@
     return detailedCases;
   }
 
-  // Message listener
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log("Message received in content script:", request);
 
     if (request.action === "extractCaseDetails") {
       extractDetailedCaseInformation()
-        .then((cases) => {
-          console.log("Extracted Detailed Cases:", cases);
-          sendResponse({
-            type: "caseDetails",
-            data: cases,
-          });
-        })
-        .catch((error) => {
-          console.error("Error in extractDetailedCaseInformation:", error);
+        .then((cases) => sendResponse({ type: "caseDetails", data: cases }))
+        .catch((error) =>
           sendResponse({
             type: "error",
             data: `Error extracting case details: ${error.message}`,
-          });
-        });
-
-      return true;
+          })
+        );
+      return true; // Indicates asynchronous response
     }
   });
 
