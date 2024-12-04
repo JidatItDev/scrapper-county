@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "description": "Scraper for MyOrangeCerk case search",
   "permissions": ["activeTab", "scripting", "storage", "tabs"],
-
   "host_permissions": ["https://myeclerk.myorangeclerk.com/*"],
   "content_scripts": [
     {
@@ -21,11 +20,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": [
-        "tesseract.min.js",
-        "tesseract.esm.min.js",
-        "worker.min.js"
-      ],
+      "resources": ["pdf.mjs", "pdf.worker.mjs"],
       "matches": ["https://myeclerk.myorangeclerk.com/*"]
     }
   ],

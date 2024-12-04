@@ -9,27 +9,42 @@
       rel="stylesheet"
     />
   </head>
-  <body class="bg-gray-100 p-6">
-    <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-6">
-      <h1 class="text-2xl font-bold mb-4 text-gray-800">
-        MyOrangeCerk Scraper
-      </h1>
-      <button
-        id="extractCaseDetailsBtn"
-        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300 ease-in-out"
-      >
-        Extract Case Details
-      </button>
-      <div id="loader" class="hidden mt-4">
-        <div
-          class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4"
-        ></div>
-        <p class="text-gray-600">Extracting data...</p>
+  <body class="bg-gray-100 p-4">
+    <div
+      class="max-w-2xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden"
+    >
+      <div class="bg-blue-600 p-4">
+        <h1 class="text-2xl font-bold text-white">MyOrangeCerk Scraper</h1>
       </div>
-      <div
-        id="extractedData"
-        class="mt-6 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-4"
-      ></div>
+      <div class="p-6">
+        <div class="flex flex-col sm:flex-row gap-4 mb-6">
+          <button
+            id="extractCaseDetailsBtn"
+            class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition duration-300 ease-in-out transform hover:scale-105"
+          >
+            Extract Details
+          </button>
+          <button
+            id="downloadCsvBtn"
+            class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition duration-300 ease-in-out transform hover:scale-105"
+          >
+            Download CSV
+          </button>
+        </div>
+
+        <div id="loader" class="hidden">
+          <div class="flex items-center justify-center mb-4">
+            <div
+              class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"
+            ></div>
+          </div>
+          <p class="text-gray-600 text-center">Extracting data...</p>
+        </div>
+        <div
+          id="extractedData"
+          class="mt-6 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-4 bg-gray-50"
+        ></div>
+      </div>
     </div>
     <script src="popup.js"></script>
   </body>

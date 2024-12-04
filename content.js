@@ -1,66 +1,135 @@
 (() => {
   console.log("Detailed Content Script Loaded");
 
-  // Function to dynamically load Tesseract.js
-  // async function loadTesseractJS() {
-  //   const scriptURL = chrome.runtime.getURL("tesseract.min.js");
-  //   console.log("Tesseract Script URL:", scriptURL);
-
-  //   return new Promise((resolve, reject) => {
-  //     const script = document.createElement("script");
-  //     script.src = scriptURL;
-
-  //     script.onload = () => {
-  //       if (typeof Tesseract === "undefined") {
-  //         console.error("Tesseract.js did not load correctly.");
-  //         reject(new Error("Tesseract.js did not load correctly."));
-  //       } else {
-  //         console.log("Tesseract.js loaded successfully.");
-  //         resolve();
-  //       }
-  //     };
-
-  //     script.onerror = (event) => {
-  //       console.error("Failed to load Tesseract.js:", event);
-  //       reject(new Error("Failed to load Tesseract.js"));
-  //     };
-
-  //     document.head.appendChild(script);
-  //   });
-  // }
-
-  // Function to perform OCR on a PDF image URL
-  async function performOCR(imageUrl) {
+  // Dynamically import PDF.js
+  async function importPDFJS() {
     try {
-      const { createWorker } = Tesseract;
-      const worker = createWorker({
-        workerPath: chrome.runtime.getURL("worker.min.js"),
-        corePath: chrome.runtime.getURL("tesseract.esm.min.js"),
-      });
-
-      console.log("Initializing Tesseract worker...");
-      await worker.load();
-      await worker.loadLanguage("eng");
-      await worker.initialize("eng");
-
-      console.log("Processing OCR...");
-      const {
-        data: { text },
-      } = await worker.recognize(imageUrl);
-
-      console.log("Extracted text from OCR:", text);
-
-      // Terminate the worker after OCR
-      await worker.terminate();
-
-      return text;
+      const pdfjsLib = await import(chrome.runtime.getURL("pdf.mjs"));
+      return pdfjsLib;
     } catch (error) {
-      console.error("OCR Error:", error);
-      return "OCR Failed: " + error.message;
+      console.error("Failed to import PDF.js:", error);
+      throw error;
     }
   }
 
-  // Function to fetch UCN and PDF URL from a single case details page
+  //EXTRACTNG TEXT FROM PDF , WHOLE TEXT
+  async function extractPDFText(pdfUrl) {
+    try {
+      const pdfjsLib = await importPDFJS();
+
+      // Configure worker path
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        chrome.runtime.getURL("pdf.worker.mjs");
+
+      // Load PDF document
+      const loadingTask = pdfjsLib.getDocument(pdfUrl);
+      const pdf = await loadingTask.promise;
+
+      let fullText = "";
+
+      // Iterate through all pages
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const textContent = await page.getTextContent();
+
+        // Combine text from all text items on the page
+        const pageText = textContent.items.map((item) => item.str).join(" ");
+
+        fullText += pageText + "\n";
+      }
+
+      // Parse extracted text
+      const parsedDetails = parseExtractedText(fullText);
+
+      return {
+        fullText,
+        parsedDetails,
+      };
+    } catch (error) {
+      console.error("PDF Text Extraction Error:", error);
+      return {
+        fullText: `PDF Text Extraction Failed: ${error.message}`,
+        parsedDetails: null,
+      };
+    }
+  }
+  //EXTRACTING SPECIFIC DETAILS FROM THE WHOLE TEXT
+  function parseExtractedText(text) {
+    // Remove extra whitespaces and normalize text
+    const cleanText = text.replace(/\s+/g, " ").trim();
+
+    // Extractors for different pieces of information
+    const extractors = {
+      fullHeader: () => {
+        // Match everything from the start up to the first occurrence of "Defendant" or similar terms
+        const headerMatch = cleanText.match(/^(.*?Defendant[\s\S]*?,)/i);
+        return headerMatch ? headerMatch[1].trim() : null;
+      },
+      caseNumber: () => {
+        const caseNumberMatch = cleanText.match(/CASE\s*NO[:.]\s*([^\s]+)/i);
+        return caseNumberMatch ? caseNumberMatch[1].trim() : null;
+      },
+      filingDate: () => {
+        const dateMatches = cleanText.match(
+          /(?:E-?Filed|Filed)\s*(\d{2}\/\d{2}\/\d{4}|\d{1,2}\/\d{1,2}\/\d{4})\s*(\d{1,2}:\d{2}\s*(?:AM|PM)?)/i
+        );
+        return dateMatches
+          ? `${dateMatches[1]} ${dateMatches[2] || ""}`.trim()
+          : null;
+      },
+      monetaryValues: () => {
+        // Extract all dollar amounts and their positions
+        const moneyMatches = [];
+        let match;
+        const moneyRegex = /\$[\d,]+(?:\.\d{2})?/g;
+        while ((match = moneyRegex.exec(cleanText)) !== null) {
+          moneyMatches.push({ value: match[0], index: match.index });
+        }
+
+        // If no matches, return null
+        if (!moneyMatches.length) return null;
+
+        // Parse the amounts and find the two largest
+        const parsedAmounts = moneyMatches.map((item) => ({
+          ...item,
+          numericValue: Number.parseFloat(item.value.replace(/[,$]/g, "")),
+        }));
+        const sortedAmounts = parsedAmounts.sort(
+          (a, b) => b.numericValue - a.numericValue
+        );
+        const topTwo = sortedAmounts.slice(0, 2);
+
+        // Extract context for each value
+        const getContext = (index) => {
+          const words = cleanText.split(/\s+/);
+          const position = cleanText.slice(0, index).split(/\s+/).length; // Get word position of the match
+          const context = {
+            before: words.slice(Math.max(0, position - 10), position).join(" "),
+            after: words.slice(position + 1, position + 10).join(" "),
+          };
+          return context;
+        };
+
+        // Map top two values to include context
+        const results = topTwo.map((item) => ({
+          amount: item.value,
+          numericValue: item.numericValue,
+          context: getContext(item.index),
+        }));
+
+        return results;
+      },
+    };
+
+    // Compile parsed details
+    return {
+      fullHeader: extractors.fullHeader(),
+      filingDate: extractors.filingDate(),
+      monetaryValues: extractors.monetaryValues(),
+    };
+  }
+
+  // Function to fetch Details from a single case details page
   async function fetchUCNAndPDFFromCasePage(href) {
     return new Promise((resolve, reject) => {
       const iframe = document.createElement("iframe");
@@ -124,7 +193,7 @@
     });
   }
 
-  // Main function to extract case details with OCR
+  // Main function to extract case details
   async function extractDetailedCaseInformation() {
     const rows = document.querySelectorAll("table tbody tr");
     console.log(`Found ${rows.length} rows to process`);
@@ -145,17 +214,19 @@
           try {
             const { ucn, pdfUrl } = await fetchUCNAndPDFFromCasePage(href);
 
-            let ocrText = "No OCR Text Found";
+            let pdfExtraction = {
+              fullText: "No PDF Text Found",
+              parsedDetails: null,
+            };
             if (pdfUrl !== "PDF URL Not Found") {
-              ocrText = await performOCR(pdfUrl);
+              pdfExtraction = await extractPDFText(pdfUrl);
             }
 
             detailedCases.push({
               caseNumber,
               href,
-              ucn,
               pdfUrl,
-              ocrText,
+              ...pdfExtraction,
             });
           } catch (error) {
             console.error(`Error processing case ${caseNumber}:`, error);
@@ -167,6 +238,7 @@
     return detailedCases;
   }
 
+  // Message listener for extracting case details
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log("Message received in content script:", request);
 
