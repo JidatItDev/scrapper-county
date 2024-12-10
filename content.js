@@ -196,17 +196,20 @@
       document.body.appendChild(iframe);
 
       iframe.onload = () => {
+        console.time("Total Processing Time");
         try {
           const iframeDoc =
             iframe.contentDocument || iframe.contentWindow.document;
 
-          // Extract UCN
+          // Start measuring each section
+          console.time("UCN Extraction");
           const ucnElement = iframeDoc.getElementById("caseUCN");
           const ucn = ucnElement
             ? ucnElement.textContent.trim()
             : "UCN Not Found";
+          console.timeEnd("UCN Extraction");
 
-          // Extract Case Type
+          console.time("Case Type Extraction");
           const caseTypeElement = Array.from(
             iframeDoc.querySelectorAll(".row .col-md-5.text-right.pull-left")
           ).find((div) => div.textContent.trim() === "Case Type:");
@@ -214,129 +217,78 @@
             ? caseTypeElement.nextElementSibling?.textContent.trim() ||
               "Case Type Not Found"
             : "Case Type Not Found";
+          console.timeEnd("Case Type Extraction");
 
-          // Extract Judgment Details
-          const rows = iframeDoc.querySelectorAll("table tbody tr");
+          console.time("Judgment Details Extraction");
+          const docketDataDiv = iframeDoc.querySelector("#docketData");
           let pdfUrl = null;
           const uniqueJudgments = new Map();
           const judgmentDetails = [];
 
-          for (const row of rows) {
-            const containsJudgment = Array.from(
-              row.querySelectorAll("td")
-            ).some((cell) => cell.textContent.trim().includes("Judgment"));
+          if (docketDataDiv) {
+            const rows = docketDataDiv.querySelectorAll("table tbody tr");
 
-            if (containsJudgment) {
-              // Extract Judgment Date
-              const dateCell = row.querySelector(".dDate");
-              const judgmentDate = dateCell
-                ? dateCell.textContent.trim()
-                : null;
-
-              // Extract Judgment Name
-              const judgmentCell = Array.from(row.querySelectorAll("td")).find(
-                (cell) =>
-                  Array.from(cell.querySelectorAll("p, a")).some((element) =>
-                    element.textContent.trim().includes("Judgment")
-                  )
-              );
-
-              const judgmentName = judgmentCell
-                ? Array.from(judgmentCell.querySelectorAll("p, a"))
-                    .map((element) => element.textContent.trim())
-                    .find((text) => text.includes("Judgment")) || null
-                : null;
-
-              // Only add if both name and date are not null
-              if (judgmentName && judgmentDate) {
-                const uniqueKey = `${judgmentName}-${judgmentDate}`;
-                if (!uniqueJudgments.has(uniqueKey)) {
-                  const judgmentEntry = {
-                    name: judgmentName,
-                    date: judgmentDate,
-                    ucn: ucn,
-                  };
-                  uniqueJudgments.set(uniqueKey, judgmentEntry);
-                  judgmentDetails.push(judgmentEntry);
-                }
-              }
-
-              // Check for "Final Judgment" and extract the PDF URL
-              if (judgmentName?.includes("Final Judgment")) {
-                const documentLink = judgmentCell.querySelector(
-                  'a[href*="/DocView/Doc"]'
+            // biome-ignore lint/complexity/noForEach: <explanation>
+            rows.forEach((row) => {
+              const textContent = row.textContent.trim().toLowerCase();
+              const containsJudgment = textContent.includes("judgment");
+              if (containsJudgment) {
+                const dateCell = Array.from(row.querySelectorAll("td")).find(
+                  (cell) => /\d{2}\/\d{2}\/\d{4}/.test(cell.textContent.trim())
                 );
-                if (documentLink) {
-                  pdfUrl = documentLink.href;
+                const judgmentDate = dateCell
+                  ? dateCell.textContent.trim()
+                  : "Date Not Found";
+
+                const judgmentCell = Array.from(
+                  row.querySelectorAll("td")
+                ).find((cell) => cell.textContent.trim().includes("Judgment"));
+                const judgmentName = judgmentCell
+                  ? judgmentCell.textContent.trim()
+                  : "Judgment Name Not Found";
+
+                if (judgmentName && judgmentDate) {
+                  const uniqueKey = `${judgmentName}-${judgmentDate}`;
+                  if (!uniqueJudgments.has(uniqueKey)) {
+                    const judgmentEntry = {
+                      name: judgmentName,
+                      date: judgmentDate,
+                      ucn: ucn,
+                    };
+                    uniqueJudgments.set(uniqueKey, judgmentEntry);
+                    judgmentDetails.push(judgmentEntry);
+                  }
+                }
+
+                if (judgmentName.includes("Final Judgment")) {
+                  const documentLink = row.querySelector(
+                    'a[href*="/DocView/Doc"]'
+                  );
+                  if (documentLink) {
+                    pdfUrl = documentLink.href;
+                  }
                 }
               }
-            }
+            });
           }
+          console.timeEnd("Judgment Details Extraction");
 
-          // Extract Plaintiffs and Defendants
-          // const caseTableRows = iframeDoc.querySelectorAll("tbody tr");
-          // const plaintiffs = [];
-          // const defendants = [];
-          // const uniquePlaintiffs = new Map();
-          // const uniqueDefendants = new Map();
-
-          // // biome-ignore lint/complexity/noForEach: <explanation>
-          // Array.from(caseTableRows)
-          //   .filter((row) => {
-          //     const cells = Array.from(row.querySelectorAll("td"));
-          //     return cells[1]?.textContent.trim() === "Plaintiff";
-          //   })
-          //   .forEach((row) => {
-          //     const cells = Array.from(row.querySelectorAll("td"));
-          //     const name = cells[0]?.textContent.trim() || "N/A";
-
-          //     if (!uniquePlaintiffs.has(name)) {
-          //       const plaintiffEntry = {
-          //         name: name,
-          //         attorney: cells[2]?.textContent.trim() || "N/A",
-          //         attorneyPhone: cells[3]?.textContent.trim() || "N/A",
-          //       };
-          //       uniquePlaintiffs.set(plaintiffEntry);
-          //       plaintiffs.push(plaintiffEntry);
-          //     }
-          //   });
-
-          // // biome-ignore lint/complexity/noForEach: <explanation>
-          // Array.from(caseTableRows)
-          //   .filter((row) => {
-          //     const cells = Array.from(row.querySelectorAll("td"));
-          //     return cells[1]?.textContent.trim() === "Defendant";
-          //   })
-          //   .forEach((row) => {
-          //     const cells = Array.from(row.querySelectorAll("td"));
-          //     const name = cells[0]?.textContent.trim() || "N/A";
-
-          //     if (!uniqueDefendants.has(name)) {
-          //       const defendantEntry = {
-          //         name: name,
-          //         attorney: cells[2]?.textContent.trim() || "N/A",
-          //         attorneyPhone: cells[3]?.textContent.trim() || "N/A",
-          //       };
-          //       uniqueDefendants.set(defendantEntry);
-          //       defendants.push(defendantEntry);
-          //     }
-          //   });
+          console.time("Party Names Extraction");
           const caseTableRows = iframeDoc.querySelectorAll("tbody tr");
-          // Replace these existing blocks with:
           const { plaintiffs, defendants } = cleanUpPartyNames(caseTableRows);
-          console.log("plantiffs", plaintiffs);
-          console.log("defendats", defendants);
+          console.timeEnd("Party Names Extraction");
 
-          // Extract the "Date Filed"
+          console.time("Date Filed Extraction");
           const dateFiledElement = Array.from(
             iframeDoc.querySelectorAll(".row .col-md-5.text-right.pull-left")
           ).find((div) => div.textContent.trim() === "Date Filed:");
-
           const dateFiled = dateFiledElement
             ? dateFiledElement.nextElementSibling?.textContent.trim() || " "
             : " ";
+          console.timeEnd("Date Filed Extraction");
 
-          // Resolve the data
+          console.timeEnd("Total Processing Time");
+
           resolve({
             ucn,
             pdfUrl: pdfUrl || "PDF URL Not Found",
@@ -391,6 +343,7 @@
               caseType,
               dateFiled,
             } = await fetchUCNAndPDFFromCasePage(href);
+            console.log("judment details in main ", judgmentDetails);
 
             // let pdfExtraction = {
             //   fullText: "No PDF Text Found",

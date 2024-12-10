@@ -2,6 +2,43 @@ document.addEventListener("DOMContentLoaded", () => {
   const extractButton = document.getElementById("extractCaseDetailsBtn");
   const loader = document.getElementById("loader");
   const dataDisplay = document.getElementById("extractedData");
+  let cachedDetails = null;
+
+  const startButton = document.getElementById("startTimer");
+  const stopButton = document.getElementById("stopTimer");
+  const outputDiv = document.getElementById("output");
+
+  // Fetch the current counter value from storage on load
+  chrome.runtime.sendMessage({ action: "getCounter" }, (response) => {
+    if (response && response.counter !== undefined) {
+      outputDiv.innerHTML = `Timer Count: ${response.counter}`;
+    }
+  });
+
+  // Start Timer
+  startButton.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "startTimer" }, (response) => {
+      if (response?.success) {
+        outputDiv.innerHTML = `Timer started: ${response.message}`;
+      }
+    });
+  });
+
+  // Stop Timer
+  stopButton.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "stopTimer" }, (response) => {
+      if (response?.success) {
+        outputDiv.innerHTML = `Timer stopped: ${response.message}`;
+      }
+    });
+  });
+
+  // Listen for timer updates
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === "timerUpdate") {
+      outputDiv.innerHTML = `Timer Count: ${message.counter}`;
+    }
+  });
 
   //listeners
   //Listener for Download Button
@@ -13,9 +50,11 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("No data to download.");
     }
   });
+
   //Listener for Extract Details Button
   extractButton.addEventListener("click", () => {
     showLoader();
+    cachedDetails = null;
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
@@ -35,6 +74,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
               if (response?.data) {
                 if (response.type === "caseDetails") {
+                  cachedDetails = response.data; // Cache the fetched data
                   displayCaseDetails(response.data);
                 } else {
                   showError(response.data);
@@ -55,6 +95,13 @@ document.addEventListener("DOMContentLoaded", () => {
         showError("No active tab found");
       }
     });
+  });
+
+  window.addEventListener("focus", () => {
+    console.log("comes", cachedDetails);
+    if (cachedDetails) {
+      displayCaseDetails(cachedDetails); // Display cached data
+    }
   });
 
   //loader UI
