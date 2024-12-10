@@ -82,6 +82,7 @@
         const moneyMatches = [];
         let match;
         const moneyRegex = /\$[\d,]+(?:\.\d{2})?/g;
+
         while ((match = moneyRegex.exec(cleanText)) !== null) {
           moneyMatches.push({ value: match[0], index: match.index });
         }
@@ -89,7 +90,7 @@
         // If no matches, return null
         if (!moneyMatches.length) return null;
 
-        // Parse the amounts and find the two largest
+        // Parse the amounts and sort by numeric value
         const parsedAmounts = moneyMatches.map((item) => ({
           ...item,
           numericValue: Number.parseFloat(item.value.replace(/[,$]/g, "")),
@@ -103,11 +104,10 @@
         const getContext = (index) => {
           const words = cleanText.split(/\s+/);
           const position = cleanText.slice(0, index).split(/\s+/).length; // Get word position of the match
-          const context = {
+          return {
             before: words.slice(Math.max(0, position - 10), position).join(" "),
             after: words.slice(position + 1, position + 10).join(" "),
           };
-          return context;
         };
 
         // Map top two values to include context
@@ -128,6 +128,64 @@
       monetaryValues: extractors.monetaryValues(),
     };
   }
+  function cleanUpPartyNames(caseTableRows) {
+    const plaintiffs = [];
+    const defendants = [];
+    const uniquePlaintiffs = new Set();
+    const uniqueDefendants = new Set();
+
+    // biome-ignore lint/complexity/noForEach: <explanation>
+    Array.from(caseTableRows)
+      .filter((row) => {
+        const cells = Array.from(row.querySelectorAll("td"));
+        return cells[1]?.textContent.trim() === "Plaintiff";
+      })
+      .forEach((row) => {
+        const cells = Array.from(row.querySelectorAll("td"));
+        const rawName = cells[0]?.textContent.trim() || "N/A";
+        const cleanedName = rawName
+          .replace(/\n/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (!uniquePlaintiffs.has(cleanedName)) {
+          const plaintiffEntry = {
+            name: cleanedName,
+            attorney: cells[2]?.textContent.trim() || "N/A",
+            attorneyPhone: cells[3]?.textContent.trim() || "N/A",
+          };
+          uniquePlaintiffs.add(cleanedName);
+          plaintiffs.push(plaintiffEntry);
+        }
+      });
+
+    // biome-ignore lint/complexity/noForEach: <explanation>
+    Array.from(caseTableRows)
+      .filter((row) => {
+        const cells = Array.from(row.querySelectorAll("td"));
+        return cells[1]?.textContent.trim() === "Defendant";
+      })
+      .forEach((row) => {
+        const cells = Array.from(row.querySelectorAll("td"));
+        const rawName = cells[0]?.textContent.trim() || "N/A";
+        const cleanedName = rawName
+          .replace(/\n/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (!uniqueDefendants.has(cleanedName)) {
+          const defendantEntry = {
+            name: cleanedName,
+            attorney: cells[2]?.textContent.trim() || "N/A",
+            attorneyPhone: cells[3]?.textContent.trim() || "N/A",
+          };
+          uniqueDefendants.add(cleanedName);
+          defendants.push(defendantEntry);
+        }
+      });
+
+    return { plaintiffs, defendants };
+  }
 
   // Function to fetch Details from a single case details page
   async function fetchUCNAndPDFFromCasePage(href) {
@@ -141,54 +199,166 @@
         try {
           const iframeDoc =
             iframe.contentDocument || iframe.contentWindow.document;
-          const ucnElement = iframeDoc.getElementById("caseUCN");
 
+          // Extract UCN
+          const ucnElement = iframeDoc.getElementById("caseUCN");
+          const ucn = ucnElement
+            ? ucnElement.textContent.trim()
+            : "UCN Not Found";
+
+          // Extract Case Type
+          const caseTypeElement = Array.from(
+            iframeDoc.querySelectorAll(".row .col-md-5.text-right.pull-left")
+          ).find((div) => div.textContent.trim() === "Case Type:");
+          const caseType = caseTypeElement
+            ? caseTypeElement.nextElementSibling?.textContent.trim() ||
+              "Case Type Not Found"
+            : "Case Type Not Found";
+
+          // Extract Judgment Details
           const rows = iframeDoc.querySelectorAll("table tbody tr");
           let pdfUrl = null;
+          const uniqueJudgments = new Map();
+          const judgmentDetails = [];
 
           for (const row of rows) {
-            const targetCell = Array.from(row.querySelectorAll("td")).find(
-              (cell) =>
-                Array.from(cell.querySelectorAll("p, a")).some((element) =>
-                  element.textContent.trim().includes("Final Judgment")
-                )
-            );
+            const containsJudgment = Array.from(
+              row.querySelectorAll("td")
+            ).some((cell) => cell.textContent.trim().includes("Judgment"));
 
-            if (targetCell) {
-              const documentLink = targetCell.querySelector(
-                'a[href*="/DocView/Doc"]'
+            if (containsJudgment) {
+              // Extract Judgment Date
+              const dateCell = row.querySelector(".dDate");
+              const judgmentDate = dateCell
+                ? dateCell.textContent.trim()
+                : null;
+
+              // Extract Judgment Name
+              const judgmentCell = Array.from(row.querySelectorAll("td")).find(
+                (cell) =>
+                  Array.from(cell.querySelectorAll("p, a")).some((element) =>
+                    element.textContent.trim().includes("Judgment")
+                  )
               );
 
-              if (documentLink) {
-                pdfUrl = documentLink.href;
-                break;
+              const judgmentName = judgmentCell
+                ? Array.from(judgmentCell.querySelectorAll("p, a"))
+                    .map((element) => element.textContent.trim())
+                    .find((text) => text.includes("Judgment")) || null
+                : null;
+
+              // Only add if both name and date are not null
+              if (judgmentName && judgmentDate) {
+                const uniqueKey = `${judgmentName}-${judgmentDate}`;
+                if (!uniqueJudgments.has(uniqueKey)) {
+                  const judgmentEntry = {
+                    name: judgmentName,
+                    date: judgmentDate,
+                    ucn: ucn,
+                  };
+                  uniqueJudgments.set(uniqueKey, judgmentEntry);
+                  judgmentDetails.push(judgmentEntry);
+                }
+              }
+
+              // Check for "Final Judgment" and extract the PDF URL
+              if (judgmentName?.includes("Final Judgment")) {
+                const documentLink = judgmentCell.querySelector(
+                  'a[href*="/DocView/Doc"]'
+                );
+                if (documentLink) {
+                  pdfUrl = documentLink.href;
+                }
               }
             }
           }
 
-          const ucn = ucnElement ? ucnElement.textContent.trim() : null;
+          // Extract Plaintiffs and Defendants
+          // const caseTableRows = iframeDoc.querySelectorAll("tbody tr");
+          // const plaintiffs = [];
+          // const defendants = [];
+          // const uniquePlaintiffs = new Map();
+          // const uniqueDefendants = new Map();
+
+          // // biome-ignore lint/complexity/noForEach: <explanation>
+          // Array.from(caseTableRows)
+          //   .filter((row) => {
+          //     const cells = Array.from(row.querySelectorAll("td"));
+          //     return cells[1]?.textContent.trim() === "Plaintiff";
+          //   })
+          //   .forEach((row) => {
+          //     const cells = Array.from(row.querySelectorAll("td"));
+          //     const name = cells[0]?.textContent.trim() || "N/A";
+
+          //     if (!uniquePlaintiffs.has(name)) {
+          //       const plaintiffEntry = {
+          //         name: name,
+          //         attorney: cells[2]?.textContent.trim() || "N/A",
+          //         attorneyPhone: cells[3]?.textContent.trim() || "N/A",
+          //       };
+          //       uniquePlaintiffs.set(plaintiffEntry);
+          //       plaintiffs.push(plaintiffEntry);
+          //     }
+          //   });
+
+          // // biome-ignore lint/complexity/noForEach: <explanation>
+          // Array.from(caseTableRows)
+          //   .filter((row) => {
+          //     const cells = Array.from(row.querySelectorAll("td"));
+          //     return cells[1]?.textContent.trim() === "Defendant";
+          //   })
+          //   .forEach((row) => {
+          //     const cells = Array.from(row.querySelectorAll("td"));
+          //     const name = cells[0]?.textContent.trim() || "N/A";
+
+          //     if (!uniqueDefendants.has(name)) {
+          //       const defendantEntry = {
+          //         name: name,
+          //         attorney: cells[2]?.textContent.trim() || "N/A",
+          //         attorneyPhone: cells[3]?.textContent.trim() || "N/A",
+          //       };
+          //       uniqueDefendants.set(defendantEntry);
+          //       defendants.push(defendantEntry);
+          //     }
+          //   });
+          const caseTableRows = iframeDoc.querySelectorAll("tbody tr");
+          // Replace these existing blocks with:
+          const { plaintiffs, defendants } = cleanUpPartyNames(caseTableRows);
+          console.log("plantiffs", plaintiffs);
+          console.log("defendats", defendants);
+
+          // Extract the "Date Filed"
+          const dateFiledElement = Array.from(
+            iframeDoc.querySelectorAll(".row .col-md-5.text-right.pull-left")
+          ).find((div) => div.textContent.trim() === "Date Filed:");
+
+          const dateFiled = dateFiledElement
+            ? dateFiledElement.nextElementSibling?.textContent.trim() || " "
+            : " ";
+
+          // Resolve the data
           resolve({
-            ucn: ucn || "UCN Not Found",
+            ucn,
             pdfUrl: pdfUrl || "PDF URL Not Found",
+            plaintiffs,
+            defendants,
+            judgmentDetails,
+            caseType,
+            dateFiled,
           });
         } catch (error) {
-          console.error("Error extracting UCN and PDF URL:", error);
+          console.error("Error extracting data:", error);
           resolve({
             ucn: "UCN Not Found",
             pdfUrl: "PDF URL Not Found",
+            plaintiffs: [],
+            defendants: [],
+            judgmentDetails: [],
+            dateFiled: "Date Filed Not Found",
           });
         } finally {
           document.body.removeChild(iframe);
         }
-      };
-
-      iframe.onerror = () => {
-        console.error("Failed to load iframe");
-        resolve({
-          ucn: "UCN Not Found",
-          pdfUrl: "PDF URL Not Found",
-        });
-        document.body.removeChild(iframe);
       };
     });
   }
@@ -205,28 +375,41 @@
       const statusCell = row.querySelector("td:nth-child(5)");
 
       if (caseLinkElement && statusCell) {
-        const statusText = statusCell.textContent.trim();
-
-        if (["Closed", "Reclosed"].includes(statusText)) {
+        const statusText = statusCell.textContent.trim().toLowerCase();
+        console.log("status text", statusText);
+        if (statusText.includes("closed")) {
           const caseNumber = caseLinkElement.textContent.trim();
           const href = caseLinkElement.href;
 
           try {
-            const { ucn, pdfUrl } = await fetchUCNAndPDFFromCasePage(href);
+            const {
+              ucn,
+              pdfUrl,
+              plaintiffs,
+              defendants,
+              judgmentDetails,
+              caseType,
+              dateFiled,
+            } = await fetchUCNAndPDFFromCasePage(href);
 
-            let pdfExtraction = {
-              fullText: "No PDF Text Found",
-              parsedDetails: null,
-            };
-            if (pdfUrl !== "PDF URL Not Found") {
-              pdfExtraction = await extractPDFText(pdfUrl);
-            }
+            // let pdfExtraction = {
+            //   fullText: "No PDF Text Found",
+            //   parsedDetails: null,
+            // };
+            // if (pdfUrl !== "PDF URL Not Found") {
+            //   pdfExtraction = await extractPDFText(pdfUrl);
+            // }
 
             detailedCases.push({
               caseNumber,
-              href,
-              pdfUrl,
-              ...pdfExtraction,
+              // href,
+              // pdfUrl,
+              plaintiffs,
+              defendants,
+              judgmentDetails,
+              caseType,
+              dateFiled,
+              // ...pdfExtraction,
             });
           } catch (error) {
             console.error(`Error processing case ${caseNumber}:`, error);

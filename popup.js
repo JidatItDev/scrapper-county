@@ -8,7 +8,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("downloadCsvBtn").addEventListener("click", () => {
     if (window.caseDetails && window.caseDetails.length > 0) {
       generateImprovedCSV(window.caseDetails);
-      generateTextReport(window.caseDetails);
+      // generateTextReport(window.caseDetails);
     } else {
       alert("No data to download.");
     }
@@ -82,42 +82,51 @@ document.addEventListener("DOMContentLoaded", () => {
   //Functions for exporting data
   function generateImprovedCSV(data) {
     const headers = [
+      "Case Type",
       "Case Number",
-      "PDF URL",
       "Filing Date",
-      "Amount",
-      "Context Before and After",
-      "Full Header",
+      "Judgment Date",
+      "Plaintiffs",
+      "Defendants",
+      "Judgment Details",
+      // "PDF URL"
     ];
 
     const rows = data.map((caseDetail) => {
-      const parsedDetails = caseDetail.parsedDetails;
+      // Process Plaintiffs
+      const plaintiffs = caseDetail.plaintiffs
+        .map(
+          (p) =>
+            `${p.name} (Attorney: ${p.attorney}, Phone: ${p.attorneyPhone})`
+        )
+        .join(" | ");
 
-      // Base details
-      const baseDetails = [
-        caseDetail.caseNumber,
-        caseDetail.pdfUrl !== "PDF URL Not Found" ? caseDetail.pdfUrl : "N/A",
-        parsedDetails?.filingDate || "N/A",
-      ];
+      // Process Defendants
+      const defendants = caseDetail.defendants
+        .map(
+          (d) =>
+            `${d.name} (Attorney: ${d.attorney}, Phone: ${d.attorneyPhone})`
+        )
+        .join(" | ");
 
-      // Handling monetary values
-      const monetaryRows = parsedDetails?.monetaryValues
-        ? parsedDetails.monetaryValues
-            .map(
-              (value) =>
-                `${value.amount} (Before: ${value.context.before}, After: ${value.context.after})`
-            )
-            .join(", ")
-        : "N/A";
+      // Process Judgment Details
+      const judgmentDetails = caseDetail.judgmentDetails
+        .map((j) => `${j.name} on ${j.date}`)
+        .join(" | ");
 
-      // Full Header
-      const fullHeader = parsedDetails?.fullHeader || "N/A";
-
-      // Return the row with combined monetary information
+      // Return row with new structure
       return [
-        ...baseDetails,
-        monetaryRows, // Combined context information
-        fullHeader,
+        caseDetail.caseType || "N/A",
+        caseDetail.caseNumber || "N/A",
+        caseDetail.dateFiled || "N/A",
+        caseDetail.judgmentDetails.length > 0
+          ? caseDetail.judgmentDetails[caseDetail.judgmentDetails.length - 1]
+              .date
+          : "N/A",
+        plaintiffs || "N/A",
+        defendants || "N/A",
+        judgmentDetails || "N/A",
+        // caseDetail.pdfUrl || "N/A"
       ];
     });
 
@@ -127,7 +136,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ...rows.map((row) =>
         row
           .map(
-            (item) => `"${item.replace(/"/g, '""')}"` // Escape double quotes
+            (item) => `"${String(item).replace(/"/g, '""')}"` // Ensure string conversion and escape quotes
           )
           .join(",")
       ),
@@ -140,7 +149,6 @@ document.addEventListener("DOMContentLoaded", () => {
     link.download = "case_details.csv";
     link.click();
   }
-
   function generateTextReport(data) {
     let textContent = "Case Details Report\n\n";
 
@@ -186,52 +194,119 @@ document.addEventListener("DOMContentLoaded", () => {
     table.innerHTML = `
       <thead class="bg-gray-50">
         <tr>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Case Type</th>
+          <!--<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PDF URL</th>-->
+          <!-- <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filing Date</th>-->
+          <!--<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount 1</th>-->
+          <!--<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount 2</th>-->
           <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Case Number</th>
-          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PDF URL</th>
           <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filing Date</th>
-          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Monetary Values</th>
-          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Full Header</th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Judgment Date</th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plaintiffs</th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Defendants</th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Judgment Details</th>
+          <!--<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Full Header</th>-->
         </tr>
       </thead>
       <tbody class="bg-white divide-y divide-gray-200">
         ${caseDetails
           .map((caseDetail) => {
-            const monetaryValues = caseDetail.parsedDetails?.monetaryValues
-              ? caseDetail.parsedDetails.monetaryValues
-                  .map(
-                    (value) => `
-                <div>
-                  <strong>Amount:</strong> ${value.amount}
-                  <div><strong>Before:</strong> ${value.context.before}</div>
-                  <div><strong>After:</strong> ${value.context.after}</div>
-                </div>`
-                  )
-                  .join("")
-              : "No Monetary Values Found";
+            const monetaryValues =
+              caseDetail.parsedDetails?.monetaryValues || [];
+
+            // Ensure unique plaintiffs
+            const uniquePlaintiffs = [
+              ...new Map(
+                caseDetail.plaintiffs.map((item) => [item.name, item])
+              ).values(),
+            ];
+
+            const plaintiffs =
+              uniquePlaintiffs
+                .map(
+                  (plaintiff) => ` 
+                  <div>
+                    <strong>Name:</strong> ${plaintiff.name || "N/A"}
+                  </div>`
+                )
+                .join("") || "No Plaintiffs Found";
+
+            // Ensure unique defendants
+            const uniqueDefendants = Array.from(
+              new Map(caseDetail.defendants.map((d) => [d.name, d]))
+            ).map(([_, defendant]) => defendant);
+
+            const defendants =
+              uniqueDefendants
+                .map(
+                  (defendant) => `
+                  <div>
+                    <strong>Name:</strong> ${defendant.name || "N/A"}
+                  </div>`
+                )
+                .join("") || "No Defendants Found";
+
+            // Extract latest judgment date
+            const judgmentDates = caseDetail.judgmentDetails
+              ? caseDetail.judgmentDetails
+                  .map((judgment) => new Date(judgment.date))
+                  .sort((a, b) => b - a)
+              : [];
+
+            const latestJudgmentDate = judgmentDates.length
+              ? judgmentDates[0].toLocaleDateString() // Display the latest date
+              : "No Judgment Details";
+
+            // Display judgment details
+            const judgmentDetails = caseDetail.judgmentDetails
+              ? caseDetail.judgmentDetails
+                  .map((judgment) => {
+                    // Only include judgments with valid name and date
+                    if (judgment.name && judgment.date) {
+                      return `${judgment.name} on ${judgment.date}`;
+                    }
+                    return null; // Exclude invalid judgments
+                  })
+                  .filter(Boolean) // Remove null values
+                  .join("<br>")
+              : "No Judgment Details";
 
             return `
-                <tr>
+              <tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                   ${caseDetail.caseType || "N/A"}
+              
+                </td>
+                <!--<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  ${
+                    caseDetail.pdfUrl !== "PDF URL Not Found"
+                      ? `<a href="${caseDetail.pdfUrl}" target="_blank" class="text-blue-600 hover:underline">View PDF</a>`
+                      : "N/A"
+                  }
+                </td>-->
+                <!-- <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  ${caseDetail.parsedDetails?.filingDate || "N/A"}
+                </td> -->
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  ${caseDetail.caseNumber || "N/A"}
+                </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${caseDetail.caseNumber}
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${
-                      caseDetail.pdfUrl !== "PDF URL Not Found"
-                        ? `<a href="${caseDetail.pdfUrl}" target="_blank" class="text-blue-600 hover:underline">View PDF</a>`
-                        : "N/A"
-                    }
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${caseDetail.parsedDetails?.filingDate || "N/A"}
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${monetaryValues}
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${caseDetail.parsedDetails?.fullHeader || "N/A"}
-                  </td>
-                </tr>
-              `;
+                  ${caseDetail.dateFiled || "N/A"}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  ${latestJudgmentDate || "N/A"}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  ${plaintiffs}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  ${defendants}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  ${judgmentDetails || "No judment Details"} 
+                </td>
+              </tr>
+            `;
           })
           .join("")}
       </tbody>
