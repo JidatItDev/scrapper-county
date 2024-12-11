@@ -4,39 +4,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const dataDisplay = document.getElementById("extractedData");
   let cachedDetails = null;
 
-  const startButton = document.getElementById("startTimer");
-  const stopButton = document.getElementById("stopTimer");
-  const outputDiv = document.getElementById("output");
-
-  // Fetch the current counter value from storage on load
-  chrome.runtime.sendMessage({ action: "getCounter" }, (response) => {
-    if (response && response.counter !== undefined) {
-      outputDiv.innerHTML = `Timer Count: ${response.counter}`;
-    }
-  });
-
-  // Start Timer
-  startButton.addEventListener("click", () => {
-    chrome.runtime.sendMessage({ action: "startTimer" }, (response) => {
-      if (response?.success) {
-        outputDiv.innerHTML = `Timer started: ${response.message}`;
-      }
-    });
-  });
-
-  // Stop Timer
-  stopButton.addEventListener("click", () => {
-    chrome.runtime.sendMessage({ action: "stopTimer" }, (response) => {
-      if (response?.success) {
-        outputDiv.innerHTML = `Timer stopped: ${response.message}`;
-      }
-    });
-  });
-
-  // Listen for timer updates
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.action === "timerUpdate") {
-      outputDiv.innerHTML = `Timer Count: ${message.counter}`;
+  chrome.storage.local.get("scrapedData", (result) => {
+    if (result.scrapedData) {
+      // If there is stored data, display it
+      displayCaseDetails(result.scrapedData);
+    } else {
+      dataDisplay.innerHTML = "No data available. Click 'Extract' to get data.";
     }
   });
 
@@ -51,60 +24,119 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  //Listener for Extract Details Button
+  // // //Listener for Extract Details Button
+  // // extractButton.addEventListener("click", () => {
+  // //   showLoader();
+  // //   cachedDetails = null;
+
+  // //   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  // //     if (tabs[0]) {
+  // //       try {
+  // //         chrome.tabs.sendMessage(
+  // //           tabs[0].id,
+  // //           { action: "extractCaseDetails" },
+  // //           (response) => {
+  // //             hideLoader();
+  // //             dataDisplay.innerHTML = ""; // Clear previous data
+
+  // //             if (chrome.runtime.lastError) {
+  // //               console.error("Runtime error:", chrome.runtime.lastError);
+  // //               showError(`Error: ${chrome.runtime.lastError.message}`);
+  // //               return;
+  // //             }
+
+  // //             if (response?.data) {
+  // //               if (response.type === "caseDetails") {
+  // //                 cachedDetails = response.data; // Cache the fetched data
+  // //                 displayCaseDetails(response.data);
+  // //               } else {
+  // //                 showError(response.data);
+  // //               }
+  // //             } else {
+  // //               showError("No data extracted");
+  // //             }
+  // //           }
+  // //         );
+  // //       } catch (error) {
+  // //         console.error("Error sending message:", error);
+  // //         hideLoader();
+  // //         showError("Error sending message to the content script");
+  // //       }
+  // //     } else {
+  // //       console.error("No active tab found");
+  // //       hideLoader();
+  // //       showError("No active tab found");
+  // //     }
+  // //   });
+  // // });
+  // extractButton.addEventListener("click", () => {
+  //   showLoader();
+  //   chrome.storage.local.remove("scrapedData", () => {
+  //     console.log("scrapedData cleared from chrome.storage.local");
+  //   });
+  //   chrome.runtime.sendMessage({ action: "extractCaseDetails" }, (response) => {
+  //     hideLoader();
+  //     dataDisplay.innerHTML = ""; // Clear previous data
+  //     // chrome.storage.local.set({ scrapedData: "asa" });
+
+  //     if (chrome.runtime.lastError) {
+  //       console.error("Runtime error:", chrome.runtime.lastError);
+  //       showError(`Error: ${chrome.runtime.lastError.message}`);
+  //       return;
+  //     }
+
+  //     if (response?.data) {
+  //       if (response.type === "caseDetails") {
+  //         // Cache the fetched data
+  //         chrome.storage.local.set({ scrapedData: response.data });
+
+  //         // Display the extracted data
+  //         displayCaseDetails(response.data);
+  //       } else {
+  //         showError(response.data);
+  //       }
+  //     } else {
+  //       showError("No data extracted");
+  //     }
+  //   });
+  // });
+
+  //loader UI
+
   extractButton.addEventListener("click", () => {
     showLoader();
-    cachedDetails = null;
+    chrome.storage.local.remove("scrapedData", () => {
+      console.log("scrapedData cleared from chrome.storage.local");
+    });
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        try {
-          chrome.tabs.sendMessage(
-            tabs[0].id,
-            { action: "extractCaseDetails" },
-            (response) => {
-              hideLoader();
-              dataDisplay.innerHTML = ""; // Clear previous data
+    chrome.runtime.sendMessage({ action: "extractCaseDetails" }, (response) => {
+      hideLoader();
 
-              if (chrome.runtime.lastError) {
-                console.error("Runtime error:", chrome.runtime.lastError);
-                showError(`Error: ${chrome.runtime.lastError.message}`);
-                return;
-              }
+      if (chrome.runtime.lastError) {
+        console.error("Runtime error:", chrome.runtime.lastError);
+        showError(`Error: ${chrome.runtime.lastError.message}`);
+        return;
+      }
 
-              if (response?.data) {
-                if (response.type === "caseDetails") {
-                  cachedDetails = response.data; // Cache the fetched data
-                  displayCaseDetails(response.data);
-                } else {
-                  showError(response.data);
-                }
-              } else {
-                showError("No data extracted");
-              }
-            }
-          );
-        } catch (error) {
-          console.error("Error sending message:", error);
-          hideLoader();
-          showError("Error sending message to the content script");
-        }
-      } else {
-        console.error("No active tab found");
-        hideLoader();
-        showError("No active tab found");
+      if (!response) {
+        showError("No data extracted");
       }
     });
   });
 
-  window.addEventListener("focus", () => {
-    console.log("comes", cachedDetails);
-    if (cachedDetails) {
-      displayCaseDetails(cachedDetails); // Display cached data
+  // Listen for the background script's response
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === "caseDetailsExtracted") {
+      // Cache the fetched data
+      chrome.storage.local.set({ scrapedData: message.data });
+
+      // Display the extracted data
+      displayCaseDetails(message.data);
+    } else if (message.action === "error") {
+      showError(message.message);
     }
   });
 
-  //loader UI
   function showLoader() {
     loader.classList.remove("hidden");
     extractButton.disabled = true;

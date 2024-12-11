@@ -1,6 +1,13 @@
 (() => {
   console.log("Detailed Content Script Loaded");
 
+  // Dynamically inject Tailwind CSS via CDN
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href =
+    "https://cdn.jsdelivr.net/npm/tailwindcss@3.0.24/dist/tailwind.min.css"; // Tailwind CSS CDN
+  document.head.appendChild(link);
+
   // Dynamically import PDF.js
   async function importPDFJS() {
     try {
@@ -187,6 +194,76 @@
     return { plaintiffs, defendants };
   }
 
+  function generateImprovedCSV(data) {
+    const headers = [
+      "Case Type",
+      "Case Number",
+      "Filing Date",
+      "Judgment Date",
+      "Plaintiffs",
+      "Defendants",
+      "Judgment Details",
+      // "PDF URL"
+    ];
+
+    const rows = data.map((caseDetail) => {
+      // Process Plaintiffs
+      const plaintiffs = caseDetail.plaintiffs
+        .map(
+          (p) =>
+            `${p.name} (Attorney: ${p.attorney}, Phone: ${p.attorneyPhone})`
+        )
+        .join(" | ");
+
+      // Process Defendants
+      const defendants = caseDetail.defendants
+        .map(
+          (d) =>
+            `${d.name} (Attorney: ${d.attorney}, Phone: ${d.attorneyPhone})`
+        )
+        .join(" | ");
+
+      // Process Judgment Details
+      const judgmentDetails = caseDetail.judgmentDetails
+        .map((j) => `${j.name} on ${j.date}`)
+        .join(" | ");
+
+      // Return row with new structure
+      return [
+        caseDetail.caseType || "N/A",
+        caseDetail.caseNumber || "N/A",
+        caseDetail.dateFiled || "N/A",
+        caseDetail.judgmentDetails.length > 0
+          ? caseDetail.judgmentDetails[caseDetail.judgmentDetails.length - 1]
+              .date
+          : "N/A",
+        plaintiffs || "N/A",
+        defendants || "N/A",
+        judgmentDetails || "N/A",
+        // caseDetail.pdfUrl || "N/A"
+      ];
+    });
+
+    // Create CSV content
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) =>
+        row
+          .map(
+            (item) => `"${String(item).replace(/"/g, '""')}"` // Ensure string conversion and escape quotes
+          )
+          .join(",")
+      ),
+    ].join("\r\n");
+
+    // Create a Blob for downloading the CSV
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "case_details.csv";
+    link.click();
+  }
+
   // Function to fetch Details from a single case details page
   async function fetchUCNAndPDFFromCasePage(href) {
     return new Promise((resolve, reject) => {
@@ -317,14 +394,49 @@
 
   // Main function to extract case details
   async function extractDetailedCaseInformation() {
+    const existingCaseDiv = document.querySelector("#detailedCaseDiv");
+    if (existingCaseDiv) {
+      existingCaseDiv.remove();
+    }
+
+    // Create and display the loader
+    const loaderDiv = document.createElement("div");
+    loaderDiv.style.position = "fixed";
+    loaderDiv.style.bottom = "10px"; // Make it match the position of the accordion
+    loaderDiv.style.right = "10px"; // Align it similarly to the accordion
+    loaderDiv.style.padding = "20px";
+    loaderDiv.style.backgroundColor = "rgba(0, 0, 0, 0.7)";
+    loaderDiv.style.color = "white";
+    loaderDiv.style.borderRadius = "5px";
+    loaderDiv.style.zIndex = 10001;
+    loaderDiv.style.fontSize = "16px";
+    loaderDiv.innerHTML = `
+      <div class="loader" style="border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 2s linear infinite;"></div>
+      <p>Loading detailed case information...</p>
+    `;
+    document.body.appendChild(loaderDiv);
+
+    // Add keyframes for loader spin animation
+    const style = document.createElement("style");
+    style.innerHTML = `
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    `;
+    document.head.appendChild(style);
+
     const rows = document.querySelectorAll("table tbody tr");
     console.log(`Found ${rows.length} rows to process`);
 
     const detailedCases = [];
+    let count = 0;
 
     for (const row of rows) {
       const caseLinkElement = row.querySelector(".colCaseNumber .caseLink");
       const statusCell = row.querySelector("td:nth-child(5)");
+      count += 1;
+      console.log(count);
 
       if (caseLinkElement && statusCell) {
         const statusText = statusCell.textContent.trim().toLowerCase();
@@ -343,26 +455,15 @@
               caseType,
               dateFiled,
             } = await fetchUCNAndPDFFromCasePage(href);
-            console.log("judment details in main ", judgmentDetails);
-
-            // let pdfExtraction = {
-            //   fullText: "No PDF Text Found",
-            //   parsedDetails: null,
-            // };
-            // if (pdfUrl !== "PDF URL Not Found") {
-            //   pdfExtraction = await extractPDFText(pdfUrl);
-            // }
+            console.log("judgment details in main", judgmentDetails);
 
             detailedCases.push({
               caseNumber,
-              // href,
-              // pdfUrl,
               plaintiffs,
               defendants,
               judgmentDetails,
               caseType,
               dateFiled,
-              // ...pdfExtraction,
             });
           } catch (error) {
             console.error(`Error processing case ${caseNumber}:`, error);
@@ -371,7 +472,252 @@
       }
     }
 
+    // Remove the loader once the data is fetched
+    document.body.removeChild(loaderDiv);
+
+    // Display the detailed case information
+    displayDetailedCaseDiv(detailedCases);
     return detailedCases;
+  }
+
+  function displayDetailedCaseDiv(detailedCases) {
+    // Check if there are any detailed cases
+    if (detailedCases.length > 0) {
+      // Create the main div for the case details
+      const caseDiv = document.createElement("div");
+      caseDiv.id = "detailedCaseDiv";
+      caseDiv.style.position = "fixed";
+      caseDiv.style.bottom = "10px";
+      caseDiv.style.right = "10px";
+      caseDiv.style.padding = "15px";
+      caseDiv.style.backgroundColor = "#f3f4f6";
+      caseDiv.style.color = "white";
+      caseDiv.style.borderRadius = "5px";
+      caseDiv.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.2)";
+      caseDiv.style.zIndex = 10000;
+
+      // Create a heading for the case details
+      const heading = document.createElement("h3");
+      heading.textContent = `${detailedCases.length} Detailed Case(s) Found`;
+      heading.style.margin = "0";
+      heading.style.fontSize = "16px";
+      heading.style.fontWeight = "bold";
+      heading.style.color = "#1f2937"; // Dark gray text for contrast
+      caseDiv.appendChild(heading);
+
+      // Create the "Download CSV" button
+      const downloadCsvButton = document.createElement("button");
+      downloadCsvButton.textContent = "Download CSV";
+      downloadCsvButton.style.marginTop = "10px";
+      downloadCsvButton.style.padding = "10px";
+      downloadCsvButton.style.backgroundColor = "#10b981"; // Green color
+      downloadCsvButton.style.color = "white";
+      downloadCsvButton.style.fontSize = "14px";
+      downloadCsvButton.style.border = "none";
+      downloadCsvButton.style.borderRadius = "5px";
+      downloadCsvButton.style.cursor = "pointer";
+      downloadCsvButton.style.transition = "background-color 0.3s";
+
+      // Add hover effect to button
+      downloadCsvButton.onmouseover = () => {
+        downloadCsvButton.style.backgroundColor = "#059669";
+      };
+      downloadCsvButton.onmouseout = () => {
+        downloadCsvButton.style.backgroundColor = "#10b981";
+      };
+
+      // Add click event to trigger CSV download
+      downloadCsvButton.onclick = () => {
+        generateImprovedCSV(detailedCases);
+      };
+
+      // Append the "Download CSV" button to the caseDiv
+      caseDiv.appendChild(downloadCsvButton);
+
+      // Create the accordion container
+      const accordionContainer = document.createElement("div");
+      accordionContainer.style.marginTop = "10px";
+
+      // Create the accordion button (header)
+      const accordionButton = document.createElement("button");
+      accordionButton.textContent = "View Case Details";
+      accordionButton.style.width = "100%";
+      accordionButton.style.padding = "10px";
+      accordionButton.style.backgroundColor = "#3b82f6";
+      accordionButton.style.color = "white";
+      accordionButton.style.textAlign = "left";
+      accordionButton.style.fontSize = "14px";
+      accordionButton.style.border = "none";
+      accordionButton.style.borderRadius = "5px";
+      accordionButton.style.cursor = "pointer";
+      accordionButton.style.transition = "background-color 0.3s";
+
+      // Add hover effect to button
+      accordionButton.onmouseover = () => {
+        accordionButton.style.backgroundColor = "#2563eb";
+      };
+      accordionButton.onmouseout = () => {
+        accordionButton.style.backgroundColor = "#3b82f6";
+      };
+
+      // Append the button to the accordion container
+      accordionContainer.appendChild(accordionButton);
+
+      // Create the accordion content (table for case details)
+      const accordionContent = document.createElement("div");
+      accordionContent.style.display = "none"; // Initially hidden
+      accordionContent.style.padding = "10px";
+      accordionContent.style.backgroundColor = "#f9fafb";
+      accordionContent.style.borderRadius = "5px";
+      accordionContent.style.height = "60vh"; // Takes up 60% height when open
+      accordionContent.style.overflowY = "auto"; // Adds scroll if content overflows
+
+      // Create a close button for the accordion
+      const closeAccordionButton = document.createElement("button");
+      closeAccordionButton.textContent = "Close Details";
+      closeAccordionButton.style.padding = "8px 12px";
+      closeAccordionButton.style.backgroundColor = "#e11d48"; // Red color for close button
+      closeAccordionButton.style.color = "white";
+      closeAccordionButton.style.border = "none";
+      closeAccordionButton.style.borderRadius = "5px";
+      closeAccordionButton.style.marginBottom = "10px";
+      closeAccordionButton.style.fontSize = "14px";
+      closeAccordionButton.style.cursor = "pointer";
+
+      closeAccordionButton.onclick = () => {
+        accordionContent.style.display = "none"; // Hide the content
+      };
+
+      // Append close button to the accordion content
+      accordionContent.appendChild(closeAccordionButton);
+
+      // Create the table to display the case details
+      const table = document.createElement("table");
+      table.style.width = "100%";
+      table.style.borderCollapse = "collapse";
+
+      // Create table header
+      const thead = document.createElement("thead");
+      thead.style.backgroundColor = "#f9fafb"; // Light gray background
+      thead.style.color = "#374151"; // Dark gray text
+
+      const headerRow = document.createElement("tr");
+      const columns = [
+        "Case Type",
+        "Case Number",
+        "Date Filed",
+        "Latest Judgment Date",
+        "Plaintiffs",
+        "Defendants",
+        "Judgment Details",
+        // New column for the latest judgment date
+      ];
+
+      // biome-ignore lint/complexity/noForEach: <explanation>
+      columns.forEach((col) => {
+        const th = document.createElement("th");
+        th.style.padding = "10px";
+        th.style.textAlign = "left";
+        th.style.fontWeight = "bold";
+        th.style.textTransform = "uppercase";
+        th.style.fontSize = "12px";
+        th.style.borderBottom = "1px solid #e5e7eb"; // Light gray border
+        th.textContent = col;
+        headerRow.appendChild(th);
+      });
+
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      // Create table body
+      const tbody = document.createElement("tbody");
+      tbody.style.backgroundColor = "#ffffff"; // White background
+
+      // biome-ignore lint/complexity/noForEach: <explanation>
+      detailedCases.forEach((caseDetail) => {
+        const row = document.createElement("tr");
+        row.style.borderBottom = "1px solid #e5e7eb"; // Light gray border
+
+        // Handle each column
+        const caseColumns = [
+          caseDetail.caseType || "N/A",
+          caseDetail.caseNumber || "N/A",
+          caseDetail.dateFiled || "N/A",
+          (() => {
+            const judgmentDates = caseDetail.judgmentDetails
+              ? caseDetail.judgmentDetails
+                  .map((judgment) => new Date(judgment.date))
+                  .sort((a, b) => b - a)
+              : [];
+            const latestJudgmentDate = judgmentDates.length
+              ? judgmentDates[0].toLocaleDateString() // Display the latest date
+              : "No Judgment Details";
+            return latestJudgmentDate;
+          })(),
+          caseDetail.plaintiffs
+            ? caseDetail.plaintiffs
+                .map(
+                  (plaintiff) =>
+                    `<div><strong>Name:</strong> ${
+                      plaintiff.name || "N/A"
+                    }</div>`
+                )
+                .join("")
+            : "No Plaintiffs Found",
+          caseDetail.defendants
+            ? caseDetail.defendants
+                .map(
+                  (defendant) =>
+                    `<div><strong>Name:</strong> ${
+                      defendant.name || "N/A"
+                    }</div>`
+                )
+                .join("")
+            : "No Defendants Found",
+          caseDetail.judgmentDetails
+            ? caseDetail.judgmentDetails
+                .map(
+                  (judgment) =>
+                    `<div><strong>${judgment.name}</strong> on ${new Date(
+                      judgment.date
+                    ).toLocaleDateString()}</div>`
+                )
+                .join("")
+            : "No Judgment Details",
+          // Latest Judgment Date logic
+        ];
+
+        // biome-ignore lint/complexity/noForEach: <explanation>
+        caseColumns.forEach((columnContent) => {
+          const td = document.createElement("td");
+          td.style.padding = "10px";
+          td.style.fontSize = "12px";
+          td.style.color = "#1f2937"; // Dark gray text
+          td.innerHTML = columnContent;
+          row.appendChild(td);
+        });
+
+        tbody.appendChild(row);
+      });
+
+      table.appendChild(tbody);
+      accordionContent.appendChild(table);
+
+      // Append the accordion content to the container
+      accordionContainer.appendChild(accordionContent);
+
+      // Toggle the accordion content when the button is clicked
+      accordionButton.onclick = () => {
+        const isVisible = accordionContent.style.display === "block";
+        accordionContent.style.display = isVisible ? "none" : "block";
+      };
+
+      // Append the accordion container to the caseDiv
+      caseDiv.appendChild(accordionContainer);
+
+      // Append the caseDiv to the body of the document
+      document.body.appendChild(caseDiv);
+    }
   }
 
   // Message listener for extracting case details
