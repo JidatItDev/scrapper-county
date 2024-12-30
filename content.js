@@ -194,7 +194,7 @@
     return { plaintiffs, defendants };
   }
 
-  function generateImprovedCSV(data) {
+  function generateImprovedCSV(data, filename) {
     const headers = [
       "Case Type",
       "Case Number",
@@ -260,7 +260,7 @@
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = "case_details.csv";
+    link.download = filename;
     link.click();
   }
 
@@ -499,6 +499,7 @@
     parentContainer.style.position = "relative";
     parentContainer.style.zIndex = "9998"; // Slightly lower than the panel and FAB
     document.body.appendChild(parentContainer);
+
     // Create floating action button (FAB)
     const fab = document.createElement("div");
     fab.id = "caseFAB";
@@ -578,7 +579,15 @@
     downloadButton.style.border = "none";
     downloadButton.style.borderRadius = "6px";
     downloadButton.style.cursor = "pointer";
-    downloadButton.onclick = () => generateImprovedCSV(detailedCases);
+    downloadButton.onclick = () => {
+      // Download company cases first
+      generateImprovedCSV(companyCases, "company_cases.csv");
+
+      // Add a slight delay before downloading the second file
+      setTimeout(() => {
+        generateImprovedCSV(individualCases, "individual_cases.csv");
+      }, 100); // Delay of 100ms
+    };
 
     titleContainer.appendChild(title);
     titleContainer.appendChild(downloadButton);
