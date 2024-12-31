@@ -24,83 +24,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // // //Listener for Extract Details Button
-  // // extractButton.addEventListener("click", () => {
-  // //   showLoader();
-  // //   cachedDetails = null;
-
-  // //   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-  // //     if (tabs[0]) {
-  // //       try {
-  // //         chrome.tabs.sendMessage(
-  // //           tabs[0].id,
-  // //           { action: "extractCaseDetails" },
-  // //           (response) => {
-  // //             hideLoader();
-  // //             dataDisplay.innerHTML = ""; // Clear previous data
-
-  // //             if (chrome.runtime.lastError) {
-  // //               console.error("Runtime error:", chrome.runtime.lastError);
-  // //               showError(`Error: ${chrome.runtime.lastError.message}`);
-  // //               return;
-  // //             }
-
-  // //             if (response?.data) {
-  // //               if (response.type === "caseDetails") {
-  // //                 cachedDetails = response.data; // Cache the fetched data
-  // //                 displayCaseDetails(response.data);
-  // //               } else {
-  // //                 showError(response.data);
-  // //               }
-  // //             } else {
-  // //               showError("No data extracted");
-  // //             }
-  // //           }
-  // //         );
-  // //       } catch (error) {
-  // //         console.error("Error sending message:", error);
-  // //         hideLoader();
-  // //         showError("Error sending message to the content script");
-  // //       }
-  // //     } else {
-  // //       console.error("No active tab found");
-  // //       hideLoader();
-  // //       showError("No active tab found");
-  // //     }
-  // //   });
-  // // });
-  // extractButton.addEventListener("click", () => {
-  //   showLoader();
-  //   chrome.storage.local.remove("scrapedData", () => {
-  //     console.log("scrapedData cleared from chrome.storage.local");
-  //   });
-  //   chrome.runtime.sendMessage({ action: "extractCaseDetails" }, (response) => {
-  //     hideLoader();
-  //     dataDisplay.innerHTML = ""; // Clear previous data
-  //     // chrome.storage.local.set({ scrapedData: "asa" });
-
-  //     if (chrome.runtime.lastError) {
-  //       console.error("Runtime error:", chrome.runtime.lastError);
-  //       showError(`Error: ${chrome.runtime.lastError.message}`);
-  //       return;
-  //     }
-
-  //     if (response?.data) {
-  //       if (response.type === "caseDetails") {
-  //         // Cache the fetched data
-  //         chrome.storage.local.set({ scrapedData: response.data });
-
-  //         // Display the extracted data
-  //         displayCaseDetails(response.data);
-  //       } else {
-  //         showError(response.data);
-  //       }
-  //     } else {
-  //       showError("No data extracted");
-  //     }
-  //   });
-  // });
-
   //loader UI
 
   extractButton.addEventListener("click", () => {
@@ -226,40 +149,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = "case_details.csv";
-    link.click();
-  }
-  function generateTextReport(data) {
-    let textContent = "Case Details Report\n\n";
-
-    for (const caseDetail of data) {
-      textContent += `Case Number: ${caseDetail.caseNumber}\n`;
-      textContent += `PDF URL: ${
-        caseDetail.pdfUrl !== "PDF URL Not Found" ? caseDetail.pdfUrl : "N/A"
-      }\n`;
-      textContent += `Filing Date: ${
-        caseDetail.parsedDetails?.filingDate || "N/A"
-      }\n`;
-
-      // Handling monetary values
-      const monetaryValues = caseDetail.parsedDetails?.monetaryValues
-        ? caseDetail.parsedDetails.monetaryValues
-            .map(
-              (value) =>
-                `${value.amount} (Before: ${value.context.before}, After: ${value.context.after})`
-            )
-            .join(", ")
-        : "N/A";
-
-      textContent += `Amount and Context: ${monetaryValues}\n`;
-      textContent += `Full Header: ${
-        caseDetail.parsedDetails?.fullHeader || "N/A"
-      }\n\n`;
-    }
-
-    const blob = new Blob([textContent], { type: "text/plain;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "case_details.txt";
     link.click();
   }
 

@@ -306,6 +306,16 @@
                 console.log("skipping this row");
                 return;
               }
+              // Check if "judgment" occurs AFTER "Comments:"
+              const commentsIndex = textContent.indexOf("comments:");
+              const judgmentIndex = textContent.indexOf("judgment");
+
+              if (commentsIndex !== -1 && judgmentIndex > commentsIndex) {
+                console.log(
+                  "Skipping this row: 'judgment' is after 'Comments:'."
+                );
+                return;
+              }
               const containsJudgment = textContent.includes("judgment");
               if (containsJudgment) {
                 const dateCell = Array.from(row.querySelectorAll("td")).find(
