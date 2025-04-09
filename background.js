@@ -61,6 +61,76 @@ let counter = 0;
 // });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "downloadPdf") {
+    handlePdfDownload(request);
+    sendResponse({ status: "processing" });
+  }
+  return true;
+});
+// In your background.js
+async function handlePdfDownload({ url, caseNumber, judgmentName }) {
+  // Create a new tab for the PDF
+  const tab = await chrome.tabs.create({
+    url: url,
+    active: false,
+  });
+
+  // Wait for tab to load
+  await new Promise((resolve) => {
+    chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
+      if (tabId === tab.id && changeInfo.status === "complete") {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    });
+  });
+
+  // Execute script to click the specific download button
+  try {
+    const result = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (caseNumber, judgmentName) => {
+        console.log("case number ", caseNumber, judgmentName);
+        // Find the download button by its specific classes
+        const downloadBtn = document.querySelector(
+          ".git-docviewer-download.git-docviewer-sec-download.git-docviewer-mob-download"
+        );
+
+        if (downloadBtn) {
+          // Create a custom filename
+          const safeName = judgmentName;
+
+          const filename = `${caseNumber}_${safeName}.pdf`;
+          console.log("file name", filename);
+
+          // If needed, modify the button's behavior (this depends on how the site works)
+          downloadBtn.setAttribute("download", filename);
+
+          // Simulate a click
+          downloadBtn.click();
+          return true;
+        }
+        return false;
+      },
+      args: [caseNumber, judgmentName],
+    });
+
+    if (result[0].result) {
+      console.log("Download initiated successfully");
+    } else {
+      console.warn("Download button not found");
+    }
+  } catch (error) {
+    console.error("Error executing download script:", error);
+  }
+
+  // Close the tab after 3 seconds
+  setTimeout(() => {
+    chrome.tabs.remove(tab.id).catch(() => {});
+  }, 3000);
+}
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "extractCaseDetails") {
     // Send message to content script to extract case details
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {

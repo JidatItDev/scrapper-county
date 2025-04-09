@@ -264,13 +264,59 @@
     link.click();
   }
 
-  // Function to fetch Details from a single case details page
-  async function fetchUCNAndPDFFromCasePage(href) {
+  async function getPDFBase64(pdfUrl) {
+    try {
+      // Fetch the PDF, including credentials if necessary.
+      const response = await fetch(pdfUrl, { credentials: "include" });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch PDF: ${response.status}`);
+      }
+      const blob = await response.blob();
+
+      // Create a promise that resolves with the base64 string.
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          // The result is a Data URL in the form "data:application/pdf;base64,..."
+          resolve(reader.result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error("Error getting PDF as base64:", error);
+      throw error;
+    }
+  }
+
+  async function simulateDownloadClickAsync(pdfUrl) {
+    const downloadButton = document.querySelector(
+      ".git-docviewer-download.git-docviewer-sec-download.git-docviewer-mob-download"
+    );
+
+    if (downloadButton) {
+      console.log("Download button found. Clicking in 1.5 seconds...");
+      await new Promise((resolve) => setTimeout(resolve, 1500)); // Wait before clicking
+
+      downloadButton.click();
+      console.log("Download button clicked.");
+
+      // Optionally, you could check for download completion here, if possible
+      // Example: Check if the file is downloaded based on a specific condition
+    } else {
+      console.log("Download button not found.");
+    }
+  }
+  async function fetchUCNAndPDFFromCasePage(href, caseNumber) {
     return new Promise((resolve, reject) => {
       const iframe = document.createElement("iframe");
       iframe.style.display = "none";
       iframe.src = href;
       document.body.appendChild(iframe);
+
+      // Use a flag to ensure we download only once per case.
+      let downloadInitiated = false;
+      let pdfUrl = null;
 
       iframe.onload = () => {
         console.time("Total Processing Time");
@@ -278,21 +324,21 @@
           const iframeDoc =
             iframe.contentDocument || iframe.contentWindow.document;
 
-          // Start measuring each section
-
+          // Case Type Extraction
           console.time("Case Type Extraction");
           const caseTypeElement = Array.from(
             iframeDoc.querySelectorAll(".row .col-md-5.text-right.pull-left")
           ).find((div) => div.textContent.trim() === "Case Type:");
           const caseType = caseTypeElement
-            ? caseTypeElement.nextElementSibling?.textContent.trim() ||
+            ? (caseTypeElement.nextElementSibling &&
+                caseTypeElement.nextElementSibling.textContent.trim()) ||
               "Case Type Not Found"
             : "Case Type Not Found";
           console.timeEnd("Case Type Extraction");
 
+          // Judgment Details Extraction
           console.time("Judgment Details Extraction");
           const docketDataDiv = iframeDoc.querySelector("#docketData");
-          let pdfUrl = null;
           const uniqueJudgments = new Map();
           const judgmentDetails = [];
 
@@ -306,16 +352,17 @@
                 console.log("skipping this row");
                 return;
               }
-              // Check if "judgment" occurs AFTER "Comments:"
+
+              // Check if "judgment" occurs AFTER "comments:"
               const commentsIndex = textContent.indexOf("comments:");
               const judgmentIndex = textContent.indexOf("judgment");
-
               if (commentsIndex !== -1 && judgmentIndex > commentsIndex) {
                 console.log(
                   "Skipping this row: 'judgment' is after 'Comments:'."
                 );
                 return;
               }
+
               const containsJudgment = textContent.includes("judgment");
               if (containsJudgment) {
                 const dateCell = Array.from(row.querySelectorAll("td")).find(
@@ -344,42 +391,61 @@
                   }
                 }
 
-                if (judgmentName.includes("Final Judgment")) {
+                // If judgment includes "Final Judgment" and we haven't initiated a download...
+                if (
+                  !downloadInitiated &&
+                  judgmentName.includes("Final Judgment")
+                ) {
                   const documentLink = row.querySelector(
                     'a[href*="/DocView/Doc"]'
                   );
                   if (documentLink) {
                     pdfUrl = documentLink.href;
+                    console.log("Found PDF URL:", pdfUrl);
+
+                    // Open PDF in new tab and handle download
+                    chrome.runtime.sendMessage({
+                      action: "downloadPdf",
+                      url: pdfUrl,
+                      caseNumber: caseNumber,
+                      judgmentName: judgmentName,
+                    });
+
+                    downloadInitiated = true;
                   }
                 }
               }
             });
           }
-          // Skip rows where no judgments are found
+
           if (judgmentDetails.length === 0) {
             resolve(null); // Skip this case entirely
             return;
           }
           console.timeEnd("Judgment Details Extraction");
 
+          // Party Names Extraction
           console.time("Party Names Extraction");
           const caseTableRows = iframeDoc.querySelectorAll("tbody tr");
           const { plaintiffs, defendants } = cleanUpPartyNames(caseTableRows);
           console.timeEnd("Party Names Extraction");
 
+          // Date Filed Extraction
           console.time("Date Filed Extraction");
           const dateFiledElement = Array.from(
             iframeDoc.querySelectorAll(".row .col-md-5.text-right.pull-left")
           ).find((div) => div.textContent.trim() === "Date Filed:");
           const dateFiled = dateFiledElement
-            ? dateFiledElement.nextElementSibling?.textContent.trim() || " "
+            ? (dateFiledElement.nextElementSibling &&
+                dateFiledElement.nextElementSibling.textContent.trim()) ||
+              " "
             : " ";
           console.timeEnd("Date Filed Extraction");
 
           console.timeEnd("Total Processing Time");
 
           resolve({
-            pdfUrl: pdfUrl || "PDF URL Not Found",
+            pdfUrl: pdfUrl || null,
             plaintiffs,
             defendants,
             judgmentDetails,
@@ -389,7 +455,6 @@
         } catch (error) {
           console.error("Error extracting data:", error);
           resolve({
-            // ucn: "UCN Not Found",
             pdfUrl: "PDF URL Not Found",
             plaintiffs: [],
             defendants: [],
@@ -463,7 +528,7 @@
               judgmentDetails,
               caseType,
               dateFiled,
-            } = await fetchUCNAndPDFFromCasePage(href);
+            } = await fetchUCNAndPDFFromCasePage(href, caseNumber);
             console.log("judgment details in main", judgmentDetails);
 
             detailedCases.push({
@@ -473,6 +538,7 @@
               judgmentDetails,
               caseType,
               dateFiled,
+              pdfUrl,
             });
           } catch (error) {
             console.error(`Error processing case ${caseNumber}:`, error);
