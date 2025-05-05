@@ -2,63 +2,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Background script received message:", message);
   return true;
 });
+const backendUrl = "http://localhost:3000/api/store-pdf"; // This could be stored securely
 
 let timerId;
 let counter = 0;
-
-// chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-//   if (message.action === "startTimer") {
-//     console.log("Timer started in background.");
-
-//     // Clear any existing timer
-//     if (timerId) clearInterval(timerId);
-
-//     // Start with counter from storage if it exists
-//     chrome.storage.local.get("counter", (data) => {
-//       counter = data.counter || 0; // Start from stored counter value or 0
-
-//       // Start the timer
-//       timerId = setInterval(() => {
-//         counter += 1;
-//         console.log(`Timer count: ${counter}`);
-
-//         // Save the updated counter in storage
-//         chrome.storage.local.set({ counter });
-
-//         // Optionally, send updates to popup
-//         chrome.runtime.sendMessage({ action: "timerUpdate", counter });
-
-//         // Stop the timer after 10 counts
-//         if (counter === 10) {
-//           clearInterval(timerId);
-//           sendResponse({ success: true, message: "Timer completed." });
-//         }
-//       }, 1000);
-//     });
-
-//     sendResponse({ success: true, message: "Timer started." });
-//     return true; // Keep the response channel open for async response
-//   }
-
-//   if (message.action === "stopTimer") {
-//     // Stop the timer
-//     if (timerId) {
-//       clearInterval(timerId);
-//       timerId = null;
-//     }
-//     sendResponse({ success: true, message: "Timer stopped." });
-//   }
-
-//   if (message.action === "getCounter") {
-//     // Fetch the counter from chrome.storage
-//     chrome.storage.local.get("counter", (data) => {
-//       sendResponse({ counter: data.counter || 0 });
-//     });
-//     return true; // Keep the response channel open for async response
-//   }
-
-//   return true; // Keeps the messaging channel open for asynchronous responses
-// });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "downloadPdf") {
@@ -114,9 +61,34 @@ async function handlePdfDownload({ url, caseNumber, judgmentName }) {
       },
       args: [caseNumber, judgmentName],
     });
+    console.log("download complete , bob conversion case", caseNumber);
 
     if (result[0].result) {
       console.log("Download initiated successfully");
+
+      // Listen for the download completion and capture the file as a Blob
+      chrome.downloads.onChanged.addListener(function (downloadDelta) {
+        if (downloadDelta.state && downloadDelta.state.current === "complete") {
+          const downloadId = downloadDelta.id;
+          chrome.downloads.search(
+            { id: downloadId },
+            async function (downloads) {
+              const download = downloads[0];
+              const fileUrl = download.url; // This is the URL of the downloaded PDF
+              const response = await fetch(fileUrl);
+              const blob = await response.blob(); // Convert the downloaded file to a Blob
+              // Now send this Blob along with case details to the backend
+              const caseData = {
+                caseNumber,
+                judgmentName,
+                // Include other case details like plaintiffs, defendants, etc.
+              };
+
+              await uploadTiffToBackend(caseNumber, blob);
+            }
+          );
+        }
+      });
     } else {
       console.warn("Download button not found");
     }
@@ -157,3 +129,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   return true; // To indicate async response
 });
+
+async function uploadTiffToBackend(caseNumber, tiffBlob, fileName = null) {
+  console.log("Uploading TIFF file to backend");
+  const formData = new FormData();
+
+  // Append case number
+  formData.append("caseNumber", caseNumber);
+
+  // Append the TIFF Blob as a file
+  const filename = fileName || `${caseNumber}.tiff`;
+  formData.append("pdfFile", tiffBlob, filename);
+
+  try {
+    const response = await fetch(backendUrl, {
+      method: "POST",
+      body: formData,
+      // Headers are automatically set by FormData for multipart/form-data
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Server responded with ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log("TIFF uploaded successfully:", data);
+    return data;
+  } catch (error) {
+    console.error("Error uploading TIFF file:", error);
+    throw error; // Re-throw to allow caller to handle
+  }
+}

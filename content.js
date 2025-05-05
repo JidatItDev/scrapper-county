@@ -319,13 +319,12 @@
       let pdfUrl = null;
 
       iframe.onload = () => {
-        console.time("Total Processing Time");
         try {
           const iframeDoc =
             iframe.contentDocument || iframe.contentWindow.document;
 
           // Case Type Extraction
-          console.time("Case Type Extraction");
+
           const caseTypeElement = Array.from(
             iframeDoc.querySelectorAll(".row .col-md-5.text-right.pull-left")
           ).find((div) => div.textContent.trim() === "Case Type:");
@@ -334,10 +333,7 @@
                 caseTypeElement.nextElementSibling.textContent.trim()) ||
               "Case Type Not Found"
             : "Case Type Not Found";
-          console.timeEnd("Case Type Extraction");
 
-          // Judgment Details Extraction
-          console.time("Judgment Details Extraction");
           const docketDataDiv = iframeDoc.querySelector("#docketData");
           const uniqueJudgments = new Map();
           const judgmentDetails = [];
@@ -348,10 +344,6 @@
             // biome-ignore lint/complexity/noForEach: <explanation>
             rows.forEach((row) => {
               const textContent = row.textContent.trim().toLowerCase();
-              if (!textContent.includes("judgment")) {
-                console.log("skipping this row");
-                return;
-              }
 
               // Check if "judgment" occurs AFTER "comments:"
               const commentsIndex = textContent.indexOf("comments:");
@@ -422,16 +414,12 @@
             resolve(null); // Skip this case entirely
             return;
           }
-          console.timeEnd("Judgment Details Extraction");
 
-          // Party Names Extraction
-          console.time("Party Names Extraction");
           const caseTableRows = iframeDoc.querySelectorAll("tbody tr");
           const { plaintiffs, defendants } = cleanUpPartyNames(caseTableRows);
-          console.timeEnd("Party Names Extraction");
 
           // Date Filed Extraction
-          console.time("Date Filed Extraction");
+
           const dateFiledElement = Array.from(
             iframeDoc.querySelectorAll(".row .col-md-5.text-right.pull-left")
           ).find((div) => div.textContent.trim() === "Date Filed:");
@@ -440,9 +428,6 @@
                 dateFiledElement.nextElementSibling.textContent.trim()) ||
               " "
             : " ";
-          console.timeEnd("Date Filed Extraction");
-
-          console.timeEnd("Total Processing Time");
 
           resolve({
             pdfUrl: pdfUrl || null,
@@ -512,7 +497,6 @@
       const caseLinkElement = row.querySelector(".colCaseNumber .caseLink");
       const statusCell = row.querySelector("td:nth-child(5)");
       count += 1;
-      console.log(count);
 
       if (caseLinkElement && statusCell) {
         const statusText = statusCell.textContent.trim().toLowerCase();
