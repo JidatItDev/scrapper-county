@@ -307,6 +307,21 @@
       console.log("Download button not found.");
     }
   }
+  async function detectFileTypeByUrl(url) {
+    try {
+      const response = await fetch(url, { method: "HEAD" });
+      const contentType = response.headers.get("content-type");
+
+      if (contentType.includes("pdf")) return "pdf";
+      if (contentType.includes("tiff") || contentType.includes("image"))
+        return "tiff";
+
+      return "unknown";
+    } catch (error) {
+      console.error("Error detecting file type:", error);
+      return "unknown";
+    }
+  }
   async function fetchUCNAndPDFFromCasePage(href, caseNumber) {
     return new Promise((resolve, reject) => {
       const iframe = document.createElement("iframe");
@@ -384,6 +399,60 @@
                 }
 
                 // If judgment includes "Final Judgment" and we haven't initiated a download...
+                // if (
+                //   !downloadInitiated &&
+                //   judgmentName.includes("Final Judgment")
+                // ) {
+                //   const documentLink = row.querySelector(
+                //     'a[href*="/DocView/Doc"]'
+                //   );
+                //   if (documentLink) {
+                //     pdfUrl = documentLink.href;
+                //     console.log("Found PDF URL:", pdfUrl);
+
+                //     // Open PDF in new tab and handle download
+                //     chrome.runtime.sendMessage({
+                //       action: "downloadPdf",
+                //       url: pdfUrl,
+                //       caseNumber: caseNumber,
+                //       judgmentName: judgmentName,
+                //     });
+
+                //     downloadInitiated = true;
+                //   }
+                // }
+                // if (!downloadInitiated && judgmentName.includes("Final Judgment")) {
+                //   const documentLink = row.querySelector('a[href*="/DocView/Doc"]');
+                //   if (documentLink) {
+                //     const docUrl = documentLink.href;
+                //     console.log("Found document URL:", docUrl);
+
+                //     // Detect file type first
+                //     try {
+                //       const fileType = await detectFileTypeByUrl(docUrl);
+                //       console.log("Detected file type:", fileType);
+
+                //       chrome.runtime.sendMessage({
+                //         action: fileType === "pdf" ? "downloadPdf" : "downloadTiff",
+                //         url: docUrl,
+                //         caseNumber: caseNumber,
+                //         judgmentName: judgmentName,
+                //       });
+
+                //       downloadInitiated = true;
+                //     } catch (error) {
+                //       console.error("Error detecting file type:", error);
+                //       // Fallback to trying both if detection fails
+                //       chrome.runtime.sendMessage({
+                //         action: "downloadPdf", // Try PDF first as fallback
+                //         url: docUrl,
+                //         caseNumber: caseNumber,
+                //         judgmentName: judgmentName,
+                //       });
+                //       downloadInitiated = true;
+                //     }
+                //   }
+                // }
                 if (
                   !downloadInitiated &&
                   judgmentName.includes("Final Judgment")
@@ -392,13 +461,13 @@
                     'a[href*="/DocView/Doc"]'
                   );
                   if (documentLink) {
-                    pdfUrl = documentLink.href;
-                    console.log("Found PDF URL:", pdfUrl);
+                    const docUrl = documentLink.href;
+                    console.log("Found document URL:", docUrl);
 
-                    // Open PDF in new tab and handle download
+                    // Send to background script to handle detection and download
                     chrome.runtime.sendMessage({
-                      action: "downloadPdf",
-                      url: pdfUrl,
+                      action: "handleDocumentDownload",
+                      url: docUrl,
                       caseNumber: caseNumber,
                       judgmentName: judgmentName,
                     });
