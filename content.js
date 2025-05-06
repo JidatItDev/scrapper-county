@@ -8,133 +8,6 @@
     "https://cdn.jsdelivr.net/npm/tailwindcss@3.0.24/dist/tailwind.min.css"; // Tailwind CSS CDN
   document.head.appendChild(link);
 
-  // Dynamically import PDF.js
-  async function importPDFJS() {
-    try {
-      const pdfjsLib = await import(chrome.runtime.getURL("pdf.mjs"));
-      return pdfjsLib;
-    } catch (error) {
-      console.error("Failed to import PDF.js:", error);
-      throw error;
-    }
-  }
-
-  //EXTRACTNG TEXT FROM PDF , WHOLE TEXT
-  async function extractPDFText(pdfUrl) {
-    try {
-      const pdfjsLib = await importPDFJS();
-
-      // Configure worker path
-      pdfjsLib.GlobalWorkerOptions.workerSrc =
-        chrome.runtime.getURL("pdf.worker.mjs");
-
-      // Load PDF document
-      const loadingTask = pdfjsLib.getDocument(pdfUrl);
-      const pdf = await loadingTask.promise;
-
-      let fullText = "";
-
-      // Iterate through all pages
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
-        const textContent = await page.getTextContent();
-
-        // Combine text from all text items on the page
-        const pageText = textContent.items.map((item) => item.str).join(" ");
-
-        fullText += pageText + "\n";
-      }
-
-      // Parse extracted text
-      const parsedDetails = parseExtractedText(fullText);
-
-      return {
-        fullText,
-        parsedDetails,
-      };
-    } catch (error) {
-      console.error("PDF Text Extraction Error:", error);
-      return {
-        fullText: `PDF Text Extraction Failed: ${error.message}`,
-        parsedDetails: null,
-      };
-    }
-  }
-  //EXTRACTING SPECIFIC DETAILS FROM THE WHOLE TEXT
-  function parseExtractedText(text) {
-    // Remove extra whitespaces and normalize text
-    const cleanText = text.replace(/\s+/g, " ").trim();
-
-    // Extractors for different pieces of information
-    const extractors = {
-      fullHeader: () => {
-        // Match everything from the start up to the first occurrence of "Defendant" or similar terms
-        const headerMatch = cleanText.match(/^(.*?Defendant[\s\S]*?,)/i);
-        return headerMatch ? headerMatch[1].trim() : null;
-      },
-      caseNumber: () => {
-        const caseNumberMatch = cleanText.match(/CASE\s*NO[:.]\s*([^\s]+)/i);
-        return caseNumberMatch ? caseNumberMatch[1].trim() : null;
-      },
-      filingDate: () => {
-        const dateMatches = cleanText.match(
-          /(?:E-?Filed|Filed)\s*(\d{2}\/\d{2}\/\d{4}|\d{1,2}\/\d{1,2}\/\d{4})\s*(\d{1,2}:\d{2}\s*(?:AM|PM)?)/i
-        );
-        return dateMatches
-          ? `${dateMatches[1]} ${dateMatches[2] || ""}`.trim()
-          : null;
-      },
-      monetaryValues: () => {
-        // Extract all dollar amounts and their positions
-        const moneyMatches = [];
-        let match;
-        const moneyRegex = /\$[\d,]+(?:\.\d{2})?/g;
-
-        while ((match = moneyRegex.exec(cleanText)) !== null) {
-          moneyMatches.push({ value: match[0], index: match.index });
-        }
-
-        // If no matches, return null
-        if (!moneyMatches.length) return null;
-
-        // Parse the amounts and sort by numeric value
-        const parsedAmounts = moneyMatches.map((item) => ({
-          ...item,
-          numericValue: Number.parseFloat(item.value.replace(/[,$]/g, "")),
-        }));
-        const sortedAmounts = parsedAmounts.sort(
-          (a, b) => b.numericValue - a.numericValue
-        );
-        const topTwo = sortedAmounts.slice(0, 2);
-
-        // Extract context for each value
-        const getContext = (index) => {
-          const words = cleanText.split(/\s+/);
-          const position = cleanText.slice(0, index).split(/\s+/).length; // Get word position of the match
-          return {
-            before: words.slice(Math.max(0, position - 10), position).join(" "),
-            after: words.slice(position + 1, position + 10).join(" "),
-          };
-        };
-
-        // Map top two values to include context
-        const results = topTwo.map((item) => ({
-          amount: item.value,
-          numericValue: item.numericValue,
-          context: getContext(item.index),
-        }));
-
-        return results;
-      },
-    };
-
-    // Compile parsed details
-    return {
-      fullHeader: extractors.fullHeader(),
-      filingDate: extractors.filingDate(),
-      monetaryValues: extractors.monetaryValues(),
-    };
-  }
   function cleanUpPartyNames(caseTableRows) {
     const plaintiffs = [];
     const defendants = [];
@@ -264,64 +137,6 @@
     link.click();
   }
 
-  async function getPDFBase64(pdfUrl) {
-    try {
-      // Fetch the PDF, including credentials if necessary.
-      const response = await fetch(pdfUrl, { credentials: "include" });
-      if (!response.ok) {
-        throw new Error(`Failed to fetch PDF: ${response.status}`);
-      }
-      const blob = await response.blob();
-
-      // Create a promise that resolves with the base64 string.
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          // The result is a Data URL in the form "data:application/pdf;base64,..."
-          resolve(reader.result);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    } catch (error) {
-      console.error("Error getting PDF as base64:", error);
-      throw error;
-    }
-  }
-
-  async function simulateDownloadClickAsync(pdfUrl) {
-    const downloadButton = document.querySelector(
-      ".git-docviewer-download.git-docviewer-sec-download.git-docviewer-mob-download"
-    );
-
-    if (downloadButton) {
-      console.log("Download button found. Clicking in 1.5 seconds...");
-      await new Promise((resolve) => setTimeout(resolve, 1500)); // Wait before clicking
-
-      downloadButton.click();
-      console.log("Download button clicked.");
-
-      // Optionally, you could check for download completion here, if possible
-      // Example: Check if the file is downloaded based on a specific condition
-    } else {
-      console.log("Download button not found.");
-    }
-  }
-  async function detectFileTypeByUrl(url) {
-    try {
-      const response = await fetch(url, { method: "HEAD" });
-      const contentType = response.headers.get("content-type");
-
-      if (contentType.includes("pdf")) return "pdf";
-      if (contentType.includes("tiff") || contentType.includes("image"))
-        return "tiff";
-
-      return "unknown";
-    } catch (error) {
-      console.error("Error detecting file type:", error);
-      return "unknown";
-    }
-  }
   async function fetchUCNAndPDFFromCasePage(href, caseNumber) {
     return new Promise((resolve, reject) => {
       const iframe = document.createElement("iframe");
@@ -398,61 +213,6 @@
                   }
                 }
 
-                // If judgment includes "Final Judgment" and we haven't initiated a download...
-                // if (
-                //   !downloadInitiated &&
-                //   judgmentName.includes("Final Judgment")
-                // ) {
-                //   const documentLink = row.querySelector(
-                //     'a[href*="/DocView/Doc"]'
-                //   );
-                //   if (documentLink) {
-                //     pdfUrl = documentLink.href;
-                //     console.log("Found PDF URL:", pdfUrl);
-
-                //     // Open PDF in new tab and handle download
-                //     chrome.runtime.sendMessage({
-                //       action: "downloadPdf",
-                //       url: pdfUrl,
-                //       caseNumber: caseNumber,
-                //       judgmentName: judgmentName,
-                //     });
-
-                //     downloadInitiated = true;
-                //   }
-                // }
-                // if (!downloadInitiated && judgmentName.includes("Final Judgment")) {
-                //   const documentLink = row.querySelector('a[href*="/DocView/Doc"]');
-                //   if (documentLink) {
-                //     const docUrl = documentLink.href;
-                //     console.log("Found document URL:", docUrl);
-
-                //     // Detect file type first
-                //     try {
-                //       const fileType = await detectFileTypeByUrl(docUrl);
-                //       console.log("Detected file type:", fileType);
-
-                //       chrome.runtime.sendMessage({
-                //         action: fileType === "pdf" ? "downloadPdf" : "downloadTiff",
-                //         url: docUrl,
-                //         caseNumber: caseNumber,
-                //         judgmentName: judgmentName,
-                //       });
-
-                //       downloadInitiated = true;
-                //     } catch (error) {
-                //       console.error("Error detecting file type:", error);
-                //       // Fallback to trying both if detection fails
-                //       chrome.runtime.sendMessage({
-                //         action: "downloadPdf", // Try PDF first as fallback
-                //         url: docUrl,
-                //         caseNumber: caseNumber,
-                //         judgmentName: judgmentName,
-                //       });
-                //       downloadInitiated = true;
-                //     }
-                //   }
-                // }
                 if (
                   !downloadInitiated &&
                   judgmentName.includes("Final Judgment")
@@ -471,6 +231,7 @@
                       caseNumber: caseNumber,
                       judgmentName: judgmentName,
                     });
+                    pdfUrl = docUrl;
 
                     downloadInitiated = true;
                   }
@@ -499,7 +260,7 @@
             : " ";
 
           resolve({
-            pdfUrl: pdfUrl || null,
+            pdfUrl: pdfUrl,
             plaintiffs,
             defendants,
             judgmentDetails,
@@ -582,7 +343,36 @@
               caseType,
               dateFiled,
             } = await fetchUCNAndPDFFromCasePage(href, caseNumber);
-            console.log("judgment details in main", judgmentDetails);
+
+            // Build the single payload object
+            const payload = {
+              caseNumber,
+              plaintiffs,
+              defendants,
+              judgmentDetails,
+              caseType,
+              dateFiled,
+            };
+
+            if (pdfUrl) {
+              // Send it immediately to background
+              chrome.runtime.sendMessage(
+                {
+                  action: "storeDetailedCaseInfo",
+                  payload: payload,
+                },
+                (response) => {
+                  if (response.status === "ok") {
+                    console.log(`✔ Sent details for ${caseNumber}`);
+                  } else {
+                    console.error(
+                      `✖ Failed to send ${caseNumber}:`,
+                      response.message
+                    );
+                  }
+                }
+              );
+            }
 
             detailedCases.push({
               caseNumber,
