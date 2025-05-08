@@ -212,11 +212,7 @@
                     judgmentDetails.push(judgmentEntry);
                   }
                 }
-
-                if (
-                  !downloadInitiated &&
-                  judgmentName.includes("Final Judgment")
-                ) {
+                if (!downloadInitiated && containsJudgment) {
                   const documentLink = row.querySelector(
                     'a[href*="/DocView/Doc"]'
                   );

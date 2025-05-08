@@ -2,8 +2,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Background script received message:", message);
   return true;
 });
-const backendUrl = "http://localhost:3000/api/store-pdf"; // This could be stored securely
-const BASE_URL = "http://localhost:3000";
+const backendUrl = "https://ocscrapper.onrender.com/api/store-pdf"; // This could be stored securely
+const BASE_URL = "https://ocscrapper.onrender.com";
 let timerId;
 let counter = 0;
 
